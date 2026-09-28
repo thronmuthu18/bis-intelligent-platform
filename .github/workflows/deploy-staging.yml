@@ -2,15 +2,29 @@ name: Staging Deployment Pipeline
 
 # ==============================================================================
 # Staging Deployment Pipeline — BIS Intelligent Platform
-# Trigger: Manual Dispatch (workflow_dispatch) or Push to 'develop' branch
-# Applies database migrations safely, builds images, and runs staging smoke tests
+# Trigger: Manual Dispatch (workflow_dispatch) or Push to 'main' branch
+# Target: AWS Staging Infrastructure (ap-south-1 / Account 758808001260)
+# Authentication: GitHub OIDC Role Assumption (Zero Static AWS Access Keys)
+# Container Registry: Amazon Elastic Container Registry (ECR)
+# Orchestration: Amazon Elastic Container Service (ECS Fargate)
+# Database Migrations: One-off ECS Task inside Private VPC (Isolated RDS)
 # ==============================================================================
 
 on:
   workflow_dispatch:
     inputs:
       run_migrations:
-        description: 'Execute Prisma migration deploy (npx prisma migrate deploy)'
+        description: 'Execute Prisma migration via one-off ECS task in VPC'
+        required: true
+        default: true
+        type: boolean
+      deploy_api:
+        description: 'Deploy API service'
+        required: true
+        default: true
+        type: boolean
+      deploy_web:
+        description: 'Deploy Web service'
         required: true
         default: true
         type: boolean
@@ -19,13 +33,32 @@ on:
         required: true
         default: true
         type: boolean
+      confirmation:
+        description: 'Type "CONFIRM" to proceed with deployment'
+        required: true
+        default: 'CONFIRM'
+        type: string
   push:
     branches:
-      - develop
+      - main
 
 concurrency:
   group: staging-deployment
   cancel-in-progress: false
+
+# Top-level permissions required for GitHub Actions OIDC token minting
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-south-1
+  AWS_ROLE_ARN: arn:aws:iam::758808001260:role/bis-staging-github-actions-deploy-role
+  ECR_REGISTRY: 758808001260.dkr.ecr.ap-south-1.amazonaws.com
+  ECS_CLUSTER: bis-staging-cluster
+  ECS_API_SERVICE: bis-staging-api-service
+  ECS_WEB_SERVICE: bis-staging-web-service
+  ALB_DNS: bis-staging-alb-760893208.ap-south-1.elb.amazonaws.com
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────────
@@ -37,6 +70,15 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      - name: Verify Confirmation String (Manual Dispatch)
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          if [ "${{ github.event.inputs.confirmation }}" != "CONFIRM" ]; then
+            echo "::error::Deployment aborted! Confirmation input was not 'CONFIRM'."
+            exit 1
+          fi
+          echo "Guardrail verification passed for staging deployment."
+
       - name: Checkout Code
         uses: actions/checkout@v4
 
@@ -75,84 +117,309 @@ jobs:
         run: npm run build
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # Job 2: Database Migration (Idempotent, Zero-Downtime Safe)
+  # Job 2: Build & Push Container Images to Amazon ECR (OIDC Authenticated)
   # ─────────────────────────────────────────────────────────────────────────────
-  database-migration:
-    name: Staging Database Migration
+  build-and-push-images:
+    name: Build & Push ECR Images
     runs-on: ubuntu-latest
     needs: preflight-verification
+    timeout-minutes: 20
     environment: staging
-    if: ${{ github.event_name == 'push' || github.event.inputs.run_migrations == 'true' }}
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 20.x
-        uses: actions/setup-node@v4
+      - name: Configure AWS Credentials via GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          role-to-assume: ${{ vars.AWS_ROLE_ARN || env.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || env.AWS_REGION }}
+          audience: sts.amazonaws.com
 
-      - name: Install Dependencies
-        run: npm ci
-
-      # ───────────────────────────────────────────────────────────────────────
-      # STRICT PRODUCTION/STAGING RULE:
-      # ONLY 'prisma migrate deploy' is permissible!
-      # NEVER run 'prisma migrate reset' or 'prisma db push --force-reset'.
-      # ───────────────────────────────────────────────────────────────────────
-      - name: Run Prisma Migrate Deploy
-        run: |
-          echo "Applying pending migrations to staging database..."
-          npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma
-        env:
-          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-
-  # ─────────────────────────────────────────────────────────────────────────────
-  # Job 3: Build & Package Containers
-  # ─────────────────────────────────────────────────────────────────────────────
-  build-staging-containers:
-    name: Build Staging Container Images
-    runs-on: ubuntu-latest
-    needs: [preflight-verification, database-migration]
-    if: always() && (needs.preflight-verification.result == 'success') && (needs.database-migration.result == 'success' || needs.database-migration.result == 'skipped')
-    environment: staging
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build API Staging Image
+      - name: Build and Push API Staging Image
+        if: ${{ github.event_name == 'push' || github.event.inputs.deploy_api == 'true' || github.event.inputs.run_migrations == 'true' }}
         uses: docker/build-push-action@v5
         with:
           context: .
           file: apps/api/Dockerfile
-          push: false # Set to true once staging container registry is provisioned
-          tags: bis-api:staging-${{ github.sha }},bis-api:staging-latest
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/bis-staging-api:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/bis-staging-api:latest
 
-      - name: Build Web Staging Image
+      - name: Build and Push Web Staging Image
+        if: ${{ github.event_name == 'push' || github.event.inputs.deploy_web == 'true' }}
         uses: docker/build-push-action@v5
         with:
           context: .
           file: apps/web/Dockerfile
-          push: false # Set to true once staging container registry is provisioned
-          tags: bis-web:staging-${{ github.sha }},bis-web:staging-latest
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/bis-staging-web:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/bis-staging-web:latest
           build-args: |
             VITE_API_URL=${{ vars.STAGING_API_URL || '/api/v1' }}
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # Job 4: Post-Deployment Smoke Tests
+  # Job 3: Database Migration via One-Off ECS Task inside Private VPC
   # ─────────────────────────────────────────────────────────────────────────────
-  staging-smoke-tests:
+  database-migration:
+    name: Run Database Migration (ECS Task)
+    runs-on: ubuntu-latest
+    needs: [preflight-verification, build-and-push-images]
+    if: always() && (needs.preflight-verification.result == 'success') && (needs.build-and-push-images.result == 'success') && (github.event_name == 'push' || github.event.inputs.run_migrations == 'true')
+    timeout-minutes: 15
+    environment: staging
+    outputs:
+      api_task_def_arn: ${{ steps.register-api-td.outputs.api_task_def_arn }}
+
+    steps:
+      - name: Configure AWS Credentials via GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN || env.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || env.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      - name: Register Updated API Task Definition with GITHUB_SHA Image
+        id: register-api-td
+        run: |
+          API_IMAGE="${{ env.ECR_REGISTRY }}/bis-staging-api:${{ github.sha }}"
+          FAMILY="bis-staging-api"
+
+          echo "Fetching active task definition for family: $FAMILY"
+          aws ecs describe-task-definition \
+            --task-definition "$FAMILY" \
+            --region "${{ env.AWS_REGION }}" > td_api.json
+
+          echo "Setting container image to: $API_IMAGE"
+          jq --arg IMAGE "$API_IMAGE" '
+            .taskDefinition
+            | .containerDefinitions |= map(if .name == "api" then .image = $IMAGE else . end)
+            | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)
+          ' td_api.json > new_td_api.json
+
+          NEW_TASK_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://new_td_api.json \
+            --region "${{ env.AWS_REGION }}" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          echo "Registered new API task definition: $NEW_TASK_ARN"
+          echo "api_task_def_arn=$NEW_TASK_ARN" >> $GITHUB_OUTPUT
+
+      - name: Discover VPC Subnets and Security Groups from API Service
+        id: discover-network
+        run: |
+          echo "Retrieving network configuration from ${{ env.ECS_API_SERVICE }}..."
+          SERVICE_DESC=$(aws ecs describe-services \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --services "${{ env.ECS_API_SERVICE }}" \
+            --region "${{ env.AWS_REGION }}")
+
+          SUBNETS=$(echo "$SERVICE_DESC" | jq -r '.services[0].networkConfiguration.awsvpcConfiguration.subnets | join(",")')
+          SECURITY_GROUPS=$(echo "$SERVICE_DESC" | jq -r '.services[0].networkConfiguration.awsvpcConfiguration.securityGroups | join(",")')
+
+          # Resilient fallback to known staging VPC topology
+          if [ -z "$SUBNETS" ] || [ "$SUBNETS" == "null" ]; then
+            SUBNETS="subnet-02874fd5ae7b590f3,subnet-06dc29bf66b3e902d"
+          fi
+          if [ -z "$SECURITY_GROUPS" ] || [ "$SECURITY_GROUPS" == "null" ]; then
+            SECURITY_GROUPS="sg-0ec0eea87d0b5b8eb"
+          fi
+
+          echo "Target Private Subnets: $SUBNETS"
+          echo "Target Security Groups: $SECURITY_GROUPS"
+          echo "subnets=$SUBNETS" >> $GITHUB_OUTPUT
+          echo "security_groups=$SECURITY_GROUPS" >> $GITHUB_OUTPUT
+
+      - name: Execute Prisma Migration via One-Off ECS Fargate Task
+        run: |
+          TASK_DEF="${{ steps.register-api-td.outputs.api_task_def_arn }}"
+          SUBNETS="${{ steps.discover-network.outputs.subnets }}"
+          SECURITY_GROUPS="${{ steps.discover-network.outputs.security_groups }}"
+
+          echo "======================================================================"
+          echo "Running Prisma Migration Task inside Private VPC"
+          echo "Task Definition: $TASK_DEF"
+          echo "Cluster: ${{ env.ECS_CLUSTER }}"
+          echo "Subnets: $SUBNETS"
+          echo "Security Groups: $SECURITY_GROUPS"
+          echo "======================================================================"
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --task-definition "$TASK_DEF" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SECURITY_GROUPS],assignPublicIp=DISABLED}" \
+            --overrides '{"containerOverrides":[{"name":"api","command":["npx","prisma","migrate","deploy","--schema=apps/api/prisma/schema.prisma"]}]}' \
+            --started-by "github-actions-migration" \
+            --region "${{ env.AWS_REGION }}" \
+            --query 'tasks[0].taskArn' \
+            --output text)
+
+          if [ -z "$TASK_ARN" ] || [ "$TASK_ARN" == "None" ]; then
+            echo "::error::Failed to start ECS migration task."
+            exit 1
+          fi
+
+          echo "Migration task launched successfully: $TASK_ARN"
+          echo "Waiting for migration task to reach STOPPED status..."
+
+          aws ecs wait tasks-stopped \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --tasks "$TASK_ARN" \
+            --region "${{ env.AWS_REGION }}"
+
+          echo "Inspecting migration task exit status..."
+          TASK_DETAILS=$(aws ecs describe-tasks \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --tasks "$TASK_ARN" \
+            --region "${{ env.AWS_REGION }}")
+
+          EXIT_CODE=$(echo "$TASK_DETAILS" | jq -r '.tasks[0].containers[0].exitCode')
+          STOPPED_REASON=$(echo "$TASK_DETAILS" | jq -r '.tasks[0].stoppedReason // "None"')
+          CONTAINER_REASON=$(echo "$TASK_DETAILS" | jq -r '.tasks[0].containers[0].reason // "None"')
+
+          echo "Task Stopped Reason: $STOPPED_REASON"
+          echo "Container Stop Reason: $CONTAINER_REASON"
+          echo "Container Exit Code: $EXIT_CODE"
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "::error::Prisma database migration task failed with exit code $EXIT_CODE."
+            exit 1
+          fi
+
+          echo "Prisma database migration completed successfully with exit code 0."
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 4: ECS Rolling Service Rollout & Stabilization
+  # ─────────────────────────────────────────────────────────────────────────────
+  rollout:
+    name: Deploy to ECS & Stabilize
+    runs-on: ubuntu-latest
+    needs: [build-and-push-images, database-migration]
+    if: always() && (needs.build-and-push-images.result == 'success') && (needs.database-migration.result == 'success' || needs.database-migration.result == 'skipped')
+    timeout-minutes: 20
+    environment: staging
+
+    steps:
+      - name: Configure AWS Credentials via GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN || env.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || env.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      - name: Update ECS API Service
+        if: ${{ github.event_name == 'push' || github.event.inputs.deploy_api == 'true' }}
+        run: |
+          API_TASK_ARN="${{ needs.database-migration.outputs.api_task_def_arn }}"
+
+          # If migration was skipped, register new API task definition here
+          if [ -z "$API_TASK_ARN" ]; then
+            API_IMAGE="${{ env.ECR_REGISTRY }}/bis-staging-api:${{ github.sha }}"
+            FAMILY="bis-staging-api"
+
+            echo "Fetching active task definition for family: $FAMILY"
+            aws ecs describe-task-definition \
+              --task-definition "$FAMILY" \
+              --region "${{ env.AWS_REGION }}" > td_api.json
+
+            echo "Setting container image to: $API_IMAGE"
+            jq --arg IMAGE "$API_IMAGE" '
+              .taskDefinition
+              | .containerDefinitions |= map(if .name == "api" then .image = $IMAGE else . end)
+              | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)
+            ' td_api.json > new_td_api.json
+
+            API_TASK_ARN=$(aws ecs register-task-definition \
+              --cli-input-json file://new_td_api.json \
+              --region "${{ env.AWS_REGION }}" \
+              --query 'taskDefinition.taskDefinitionArn' \
+              --output text)
+            echo "Registered API task definition: $API_TASK_ARN"
+          fi
+
+          echo "Updating ECS service ${{ env.ECS_API_SERVICE }} to task definition: $API_TASK_ARN..."
+          aws ecs update-service \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --service "${{ env.ECS_API_SERVICE }}" \
+            --task-definition "$API_TASK_ARN" \
+            --region "${{ env.AWS_REGION }}"
+          echo "API service update triggered."
+
+      - name: Update ECS Web Service
+        if: ${{ github.event_name == 'push' || github.event.inputs.deploy_web == 'true' }}
+        run: |
+          WEB_IMAGE="${{ env.ECR_REGISTRY }}/bis-staging-web:${{ github.sha }}"
+          FAMILY="bis-staging-web"
+
+          echo "Fetching active task definition for family: $FAMILY"
+          aws ecs describe-task-definition \
+            --task-definition "$FAMILY" \
+            --region "${{ env.AWS_REGION }}" > td_web.json
+
+          echo "Setting container image to: $WEB_IMAGE"
+          jq --arg IMAGE "$WEB_IMAGE" '
+            .taskDefinition
+            | .containerDefinitions |= map(if .name == "web" then .image = $IMAGE else . end)
+            | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)
+          ' td_web.json > new_td_web.json
+
+          WEB_TASK_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://new_td_web.json \
+            --region "${{ env.AWS_REGION }}" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          echo "Registered Web task definition: $WEB_TASK_ARN"
+
+          echo "Updating ECS service ${{ env.ECS_WEB_SERVICE }} to task definition: $WEB_TASK_ARN..."
+          aws ecs update-service \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --service "${{ env.ECS_WEB_SERVICE }}" \
+            --task-definition "$WEB_TASK_ARN" \
+            --region "${{ env.AWS_REGION }}"
+          echo "Web service update triggered."
+
+      - name: Wait for ECS Services to Become Stable
+        run: |
+          SERVICES=()
+          if [ "${{ github.event_name }}" == "push" ] || [ "${{ github.event.inputs.deploy_api }}" == "true" ]; then
+            SERVICES+=("${{ env.ECS_API_SERVICE }}")
+          fi
+          if [ "${{ github.event_name }}" == "push" ] || [ "${{ github.event.inputs.deploy_web }}" == "true" ]; then
+            SERVICES+=("${{ env.ECS_WEB_SERVICE }}")
+          fi
+
+          if [ ${#SERVICES[@]} -gt 0 ]; then
+            echo "Waiting for ECS services to stabilize: ${SERVICES[*]}"
+            aws ecs wait services-stable \
+              --cluster "${{ env.ECS_CLUSTER }}" \
+              --services "${SERVICES[@]}" \
+              --region "${{ env.AWS_REGION }}"
+            echo "All target ECS services are now stable."
+          else
+            echo "No services selected for rollout."
+          fi
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 5: Post-Deployment Staging Health Verification & Smoke Tests
+  # ─────────────────────────────────────────────────────────────────────────────
+  staging-health-verification:
     name: Staging Health & Smoke Verification
     runs-on: ubuntu-latest
-    needs: build-staging-containers
+    needs: rollout
+    timeout-minutes: 15
     environment: staging
-    if: ${{ github.event_name == 'push' || github.event.inputs.run_smoke_tests == 'true' }}
 
     steps:
       - name: Checkout Code
@@ -163,10 +430,112 @@ jobs:
         with:
           node-version: 20
 
-      - name: Run Automated Staging Smoke Tests
+      - name: Configure AWS Credentials via GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN || env.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || env.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      - name: Verify ECS Target Group Health
         run: |
-          echo "Executing staging smoke test suite against target endpoints..."
+          echo "======================================================================"
+          echo "Checking ALB Target Group Health Status via AWS API"
+          echo "======================================================================"
+
+          API_TG_ARN=$(aws elbv2 describe-target-groups \
+            --names "bis-staging-tg-api" \
+            --region "${{ env.AWS_REGION }}" \
+            --query "TargetGroups[0].TargetGroupArn" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$API_TG_ARN" ] && [ "$API_TG_ARN" != "None" ]; then
+            echo "Inspecting API Target Group: $API_TG_ARN"
+            aws elbv2 describe-target-health \
+              --target-group-arn "$API_TG_ARN" \
+              --region "${{ env.AWS_REGION }}"
+          fi
+
+          WEB_TG_ARN=$(aws elbv2 describe-target-groups \
+            --names "bis-staging-tg-web" \
+            --region "${{ env.AWS_REGION }}" \
+            --query "TargetGroups[0].TargetGroupArn" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$WEB_TG_ARN" ] && [ "$WEB_TG_ARN" != "None" ]; then
+            echo "Inspecting Web Target Group: $WEB_TG_ARN"
+            aws elbv2 describe-target-health \
+              --target-group-arn "$WEB_TG_ARN" \
+              --region "${{ env.AWS_REGION }}"
+          fi
+
+      - name: Verify Staging ALB Health Endpoints
+        run: |
+          TARGET_URL="http://${{ env.ALB_DNS }}"
+          echo "======================================================================"
+          echo "Probing ALB Health Endpoints on: $TARGET_URL"
+          echo "======================================================================"
+
+          # 1. API Health & Database Connectivity Check (/api/v1/health)
+          echo "Checking Full API Health Endpoint: $TARGET_URL/api/v1/health"
+          API_HEALTHY=false
+          for i in {1..30}; do
+            HTTP_CODE=$(curl -s -o /tmp/health_response.json -w "%{http_code}" --connect-timeout 5 "$TARGET_URL/api/v1/health" || echo "000")
+            if [ "$HTTP_CODE" -eq 200 ]; then
+              echo "API health check passed (HTTP 200) on attempt $i."
+              cat /tmp/health_response.json
+              echo ""
+              API_HEALTHY=true
+              break
+            fi
+            echo "Attempt $i/30: HTTP $HTTP_CODE. Retrying in 5 seconds..."
+            sleep 5
+          done
+
+          if [ "$API_HEALTHY" != "true" ]; then
+            echo "::error::API health check ($TARGET_URL/api/v1/health) failed after 30 attempts."
+            exit 1
+          fi
+
+          # 2. API Liveness Check (/api/v1/health/live)
+          echo "Checking API Liveness Endpoint: $TARGET_URL/api/v1/health/live"
+          LIVE_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "$TARGET_URL/api/v1/health/live" || echo "000")
+          if [ "$LIVE_CODE" -eq 200 ]; then
+            echo "API liveness probe succeeded (HTTP 200)."
+          else
+            echo "::warning::API liveness probe returned HTTP $LIVE_CODE."
+          fi
+
+          # 3. Web Frontend Ingress Check (/healthz)
+          echo "Checking Web Frontend Ingress: $TARGET_URL/healthz"
+          WEB_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "$TARGET_URL/healthz" || echo "000")
+          if [ "$WEB_CODE" -eq 200 ]; then
+            echo "Web health check succeeded (HTTP 200)."
+          else
+            echo "::warning::Web ingress /healthz returned HTTP $WEB_CODE. Probing root /..."
+            ROOT_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "$TARGET_URL/" || echo "000")
+            echo "Web root / returned HTTP $ROOT_CODE."
+          fi
+
+      - name: Execute Automated Staging Smoke Tests
+        if: ${{ github.event_name == 'push' || github.event.inputs.run_smoke_tests == 'true' }}
+        run: |
+          echo "======================================================================"
+          echo "Executing Staging Smoke Test Suite against ALB"
+          echo "======================================================================"
           node scripts/staging-smoke-test.mjs
         env:
-          STAGING_API_URL: ${{ vars.STAGING_API_URL || 'http://localhost:5000/api/v1' }}
-          STAGING_WEB_URL: ${{ vars.STAGING_WEB_URL || 'http://localhost:8080' }}
+          STAGING_API_URL: "http://${{ env.ALB_DNS }}/api/v1"
+          STAGING_WEB_URL: "http://${{ env.ALB_DNS }}"
+
+      - name: Deployment Success Summary
+        run: |
+          echo "======================================================================"
+          echo " STAGING DEPLOYMENT AND VERIFICATION COMPLETED SUCCESSFULLY"
+          echo " Cluster:        ${{ env.ECS_CLUSTER }}"
+          echo " API Service:    ${{ env.ECS_API_SERVICE }}"
+          echo " Web Service:    ${{ env.ECS_WEB_SERVICE }}"
+          echo " API Image:      ${{ env.ECR_REGISTRY }}/bis-staging-api:${{ github.sha }}"
+          echo " Web Image:      ${{ env.ECR_REGISTRY }}/bis-staging-web:${{ github.sha }}"
+          echo " ALB Health URL: http://${{ env.ALB_DNS }}/api/v1/health"
+          echo "======================================================================"

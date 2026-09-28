@@ -138,7 +138,10 @@ data "aws_iam_policy_document" "github_actions_assume_role" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repo}:*"]
+      values = [
+        "repo:${var.github_repo}:ref:refs/heads/main",
+        "repo:${var.github_repo}:environment:staging"
+      ]
     }
   }
 }
@@ -202,21 +205,24 @@ resource "aws_iam_policy" "github_actions_deploy" {
         ]
         Resource = "*"
       },
-      # 4. ECS Service Update and Describe
+      # 4. ECS Service Update, Describe and RunTask
       {
-        Sid    = "ECSServiceUpdate"
+        Sid    = "ECSServiceUpdateAndRunTask"
         Effect = "Allow"
         Action = [
           "ecs:UpdateService",
           "ecs:DescribeServices",
           "ecs:DescribeClusters",
-          "ecs:DescribeTasks"
+          "ecs:DescribeTasks",
+          "ecs:RunTask",
+          "ecs:StopTask"
         ]
         Resource = [
           aws_ecs_cluster.main.arn,
           aws_ecs_service.api.id,
           aws_ecs_service.web.id,
-          "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task/${aws_ecs_cluster.main.name}/*"
+          "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task/${aws_ecs_cluster.main.name}/*",
+          "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:task-definition/bis-${var.environment}-*"
         ]
       },
       # 5. PassRole for existing ECS execution and task roles
@@ -243,6 +249,16 @@ resource "aws_iam_policy" "github_actions_deploy" {
         Action = [
           "elasticloadbalancing:DescribeLoadBalancers",
           "elasticloadbalancing:DescribeTargetHealth"
+        ]
+        Resource = "*"
+      },
+      # 7. VPC & Security Group Describe for ECS RunTask Network Configuration
+      {
+        Sid    = "EC2NetworkDescribe"
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeSubnets",
+          "ec2:DescribeSecurityGroups"
         ]
         Resource = "*"
       }
