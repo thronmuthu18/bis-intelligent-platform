@@ -108,32 +108,24 @@ export const envSchema = z
           });
         }
 
-        // When running under AWS ECS Fargate with an IAM task role, container metadata/credentials
-        // are injected automatically by the ECS runtime (no static access keys required).
-        const isAwsIamEnvironment = Boolean(
-          process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI ||
-          process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI ||
-          process.env.AWS_EXECUTION_ENV ||
-          process.env.ECS_CONTAINER_METADATA_URI_V4 ||
-          process.env.AWS_ROLE_ARN ||
-          process.env.AWS_WEB_IDENTITY_TOKEN_FILE
-        );
+        // In AWS ECS / IAM task role production deployments, static credentials are not required
+        // (credentials are resolved via the default provider chain).
+        // If explicit/static credentials are provided, both key and secret must be supplied.
+        const hasAccessKey = Boolean(data.STORAGE_ACCESS_KEY && data.STORAGE_ACCESS_KEY.trim() !== '');
+        const hasSecretKey = Boolean(data.STORAGE_SECRET_KEY && data.STORAGE_SECRET_KEY.trim() !== '');
 
-        if (!isAwsIamEnvironment) {
-          if (!data.STORAGE_ACCESS_KEY || data.STORAGE_ACCESS_KEY.trim() === '') {
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              path: ['STORAGE_ACCESS_KEY'],
-              message: 'STORAGE_ACCESS_KEY is required when STORAGE_PROVIDER is "s3".',
-            });
-          }
-          if (!data.STORAGE_SECRET_KEY || data.STORAGE_SECRET_KEY.trim() === '') {
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              path: ['STORAGE_SECRET_KEY'],
-              message: 'STORAGE_SECRET_KEY is required when STORAGE_PROVIDER is "s3".',
-            });
-          }
+        if (hasAccessKey && !hasSecretKey) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['STORAGE_SECRET_KEY'],
+            message: 'STORAGE_SECRET_KEY is required when STORAGE_ACCESS_KEY is provided.',
+          });
+        } else if (!hasAccessKey && hasSecretKey) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['STORAGE_ACCESS_KEY'],
+            message: 'STORAGE_ACCESS_KEY is required when STORAGE_SECRET_KEY is provided.',
+          });
         }
       }
 
