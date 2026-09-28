@@ -17,7 +17,7 @@ describe('S3PrivateStorageProvider', () => {
     global.fetch = originalFetch;
   });
 
-  it('should throw an error if required configuration is missing', () => {
+  it('should throw an error if required bucket or region is missing', () => {
     expect(() => new S3PrivateStorageProvider({
       bucket: '',
       region: 'ap-south-1',
@@ -45,6 +45,39 @@ describe('S3PrivateStorageProvider', () => {
       accessKeyId: 'test-key',
       secretAccessKey: '',
     })).toThrow('requires a secretAccessKey');
+  });
+
+  it('should initialize S3PrivateStorageProvider without explicit credentials for AWS ECS Task IAM Role', () => {
+    const provider = new S3PrivateStorageProvider({
+      bucket: 'bis-staging-documents-5gvs3g',
+      region: 'ap-south-1',
+    });
+    expect(provider).toBeInstanceOf(S3PrivateStorageProvider);
+  });
+
+  it('should support explicit credentials and sessionToken for temporary credentials', async () => {
+    const provider = new S3PrivateStorageProvider({
+      bucket: 'test-bucket',
+      region: 'ap-south-1',
+      accessKeyId: 'ASIAEXAMPLE',
+      secretAccessKey: 'secretKey',
+      sessionToken: 'testSessionToken123',
+    });
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+    });
+    global.fetch = mockFetch;
+
+    await provider.upload(Buffer.from('hello'), 'doc.pdf', 'application/pdf', 'prod-1');
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [, callOptions] = mockFetch.mock.calls[0];
+    expect(callOptions.headers['x-amz-security-token']).toBe('testSessionToken123');
+
+    const signedUrl = await provider.getSignedAccess('documents/prod-1/doc.pdf', 300);
+    expect(signedUrl).toContain('X-Amz-Security-Token=testSessionToken123');
   });
 
   it('should successfully upload a document to S3 and calculate SHA-256', async () => {

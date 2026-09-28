@@ -23,8 +23,8 @@ export function getStorageProvider(): DocumentStorageProvider {
     cachedStorageProvider = new S3PrivateStorageProvider({
       bucket: env.STORAGE_BUCKET || '',
       region: env.STORAGE_REGION || 'ap-south-1',
-      accessKeyId: env.STORAGE_ACCESS_KEY || '',
-      secretAccessKey: env.STORAGE_SECRET_KEY || '',
+      accessKeyId: env.STORAGE_ACCESS_KEY || undefined,
+      secretAccessKey: env.STORAGE_SECRET_KEY || undefined,
       endpoint: env.STORAGE_ENDPOINT,
       forcePathStyle: env.STORAGE_FORCE_PATH_STYLE,
     });

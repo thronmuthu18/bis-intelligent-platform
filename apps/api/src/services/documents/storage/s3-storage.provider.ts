@@ -2,6 +2,7 @@ import { createHash, createHmac } from 'crypto';
 import { Readable } from 'stream';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
+import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import type { DocumentStorageProvider, StoredFileMetadata } from './storage.interface.js';
 import { AppError } from '../../../utils/AppError.js';
 import { logger } from '../../../config/logger.js';
@@ -13,10 +14,17 @@ import { logger } from '../../../config/logger.js';
 export interface S3StorageConfig {
   bucket: string;
   region: string;
-  accessKeyId: string;
-  secretAccessKey: string;
+  accessKeyId?: string;
+  secretAccessKey?: string;
+  sessionToken?: string;
   endpoint?: string;
   forcePathStyle?: boolean;
+}
+
+export interface ResolvedAwsCredentials {
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,22 +50,75 @@ function getSigningKey(secretAccessKey: string, dateStamp: string, region: strin
 //  S3PrivateStorageProvider
 //  Complies with AWS S3, Cloudflare R2, MinIO, and AWS S3-compatible object stores.
 //  Enforces private bucket access, server-side HMAC validation, and signed access.
+//  Supports explicit credentials or AWS SDK default credential chain (ECS Task Role).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export class S3PrivateStorageProvider implements DocumentStorageProvider {
-  private config: S3StorageConfig;
+  private config: {
+    bucket: string;
+    region: string;
+    accessKeyId?: string;
+    secretAccessKey?: string;
+    sessionToken?: string;
+    endpoint?: string;
+    forcePathStyle: boolean;
+  };
+  private credentialProvider: () => Promise<ResolvedAwsCredentials>;
 
   constructor(config: S3StorageConfig) {
     if (!config.bucket) throw new Error('S3PrivateStorageProvider requires a bucket name.');
     if (!config.region) throw new Error('S3PrivateStorageProvider requires a region.');
-    if (!config.accessKeyId) throw new Error('S3PrivateStorageProvider requires an accessKeyId.');
-    if (!config.secretAccessKey) throw new Error('S3PrivateStorageProvider requires a secretAccessKey.');
+
+    const cleanAccessKey = config.accessKeyId?.trim() || undefined;
+    const cleanSecretKey = config.secretAccessKey?.trim() || undefined;
+
+    // Explicit credentials validation: if one is supplied, both must be supplied
+    if (cleanAccessKey && !cleanSecretKey) {
+      throw new Error('S3PrivateStorageProvider requires a secretAccessKey when accessKeyId is provided.');
+    }
+    if (!cleanAccessKey && cleanSecretKey) {
+      throw new Error('S3PrivateStorageProvider requires an accessKeyId when secretAccessKey is provided.');
+    }
 
     this.config = {
-      ...config,
+      bucket: config.bucket,
+      region: config.region,
+      accessKeyId: cleanAccessKey,
+      secretAccessKey: cleanSecretKey,
+      sessionToken: config.sessionToken?.trim() || undefined,
       endpoint: config.endpoint ? config.endpoint.replace(/\/$/, '') : undefined,
       forcePathStyle: config.forcePathStyle ?? false,
     };
+
+    if (cleanAccessKey && cleanSecretKey) {
+      // Local development or explicit credentials
+      this.credentialProvider = async () => ({
+        accessKeyId: cleanAccessKey,
+        secretAccessKey: cleanSecretKey,
+        sessionToken: this.config.sessionToken,
+      });
+    } else {
+      // Production AWS ECS Fargate Task IAM Role / Default Provider Chain
+      const defaultChain = fromNodeProviderChain();
+      this.credentialProvider = async () => {
+        try {
+          const creds = await defaultChain();
+          return {
+            accessKeyId: creds.accessKeyId,
+            secretAccessKey: creds.secretAccessKey,
+            sessionToken: creds.sessionToken,
+          };
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.error('Failed to resolve AWS credentials from default provider chain', { error: msg });
+          throw AppError.internal(`Unable to resolve AWS credentials for S3 storage: ${msg}`);
+        }
+      };
+    }
+  }
+
+  private async getCredentials(): Promise<ResolvedAwsCredentials> {
+    return this.credentialProvider();
   }
 
   private getHostAndUrl(key: string): { host: string; url: string; pathname: string } {
@@ -92,12 +153,13 @@ export class S3PrivateStorageProvider implements DocumentStorageProvider {
     return { host, url, pathname };
   }
 
-  private buildSignedHeaders(
+  private async buildSignedHeaders(
     method: string,
     key: string,
     payloadHash: string,
     contentType?: string
-  ): { headers: Record<string, string>; url: string } {
+  ): Promise<{ headers: Record<string, string>; url: string }> {
+    const creds = await this.getCredentials();
     const { host, url, pathname } = this.getHostAndUrl(key);
     const now = new Date();
     const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
@@ -111,6 +173,10 @@ export class S3PrivateStorageProvider implements DocumentStorageProvider {
 
     if (contentType) {
       headers['content-type'] = contentType;
+    }
+
+    if (creds.sessionToken) {
+      headers['x-amz-security-token'] = creds.sessionToken;
     }
 
     const headerKeys = Object.keys(headers).sort();
@@ -134,10 +200,10 @@ export class S3PrivateStorageProvider implements DocumentStorageProvider {
       sha256Hex(canonicalRequest),
     ].join('\n');
 
-    const signingKey = getSigningKey(this.config.secretAccessKey, dateStamp, this.config.region);
+    const signingKey = getSigningKey(creds.secretAccessKey, dateStamp, this.config.region);
     const signature = createHmac('sha256', signingKey).update(stringToSign, 'utf8').digest('hex');
 
-    headers['Authorization'] = `AWS4-HMAC-SHA256 Credential=${this.config.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+    headers['Authorization'] = `AWS4-HMAC-SHA256 Credential=${creds.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
     return { headers, url };
   }
@@ -155,7 +221,7 @@ export class S3PrivateStorageProvider implements DocumentStorageProvider {
     const storageKey = `documents/${productId}/${storedFileName}`;
 
     const payloadHash = sha256Hex(fileBuffer);
-    const { headers, url } = this.buildSignedHeaders('PUT', storageKey, payloadHash, mimeType);
+    const { headers, url } = await this.buildSignedHeaders('PUT', storageKey, payloadHash, mimeType);
 
     try {
       const response = await fetch(url, {
@@ -191,7 +257,7 @@ export class S3PrivateStorageProvider implements DocumentStorageProvider {
 
   async downloadBuffer(storageKey: string): Promise<Buffer> {
     const payloadHash = sha256Hex('');
-    const { headers, url } = this.buildSignedHeaders('GET', storageKey, payloadHash);
+    const { headers, url } = await this.buildSignedHeaders('GET', storageKey, payloadHash);
 
     try {
       const response = await fetch(url, { method: 'GET', headers });
@@ -218,9 +284,8 @@ export class S3PrivateStorageProvider implements DocumentStorageProvider {
 
   async delete(storageKey: string): Promise<boolean> {
     const payloadHash = sha256Hex('');
-    const { headers, url } = this.buildSignedHeaders('DELETE', storageKey, payloadHash);
-
     try {
+      const { headers, url } = await this.buildSignedHeaders('DELETE', storageKey, payloadHash);
       const response = await fetch(url, { method: 'DELETE', headers });
       return response.status === 204 || response.status === 200 || response.status === 404;
     } catch {
@@ -230,9 +295,8 @@ export class S3PrivateStorageProvider implements DocumentStorageProvider {
 
   async exists(storageKey: string): Promise<boolean> {
     const payloadHash = sha256Hex('');
-    const { headers, url } = this.buildSignedHeaders('HEAD', storageKey, payloadHash);
-
     try {
+      const { headers, url } = await this.buildSignedHeaders('HEAD', storageKey, payloadHash);
       const response = await fetch(url, { method: 'HEAD', headers });
       return response.status === 200;
     } catch {
@@ -242,9 +306,8 @@ export class S3PrivateStorageProvider implements DocumentStorageProvider {
 
   async getMetadata(storageKey: string): Promise<StoredFileMetadata | null> {
     const payloadHash = sha256Hex('');
-    const { headers, url } = this.buildSignedHeaders('HEAD', storageKey, payloadHash);
-
     try {
+      const { headers, url } = await this.buildSignedHeaders('HEAD', storageKey, payloadHash);
       const response = await fetch(url, { method: 'HEAD', headers });
       if (response.status !== 200) return null;
 
@@ -270,6 +333,7 @@ export class S3PrivateStorageProvider implements DocumentStorageProvider {
   }
 
   async getSignedAccess(storageKey: string, expiresInSeconds: number = 3600): Promise<string> {
+    const creds = await this.getCredentials();
     const { host, pathname } = this.getHostAndUrl(storageKey);
     const now = new Date();
     const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
@@ -278,11 +342,15 @@ export class S3PrivateStorageProvider implements DocumentStorageProvider {
 
     const queryParams: Record<string, string> = {
       'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
-      'X-Amz-Credential': `${this.config.accessKeyId}/${credentialScope}`,
+      'X-Amz-Credential': `${creds.accessKeyId}/${credentialScope}`,
       'X-Amz-Date': amzDate,
       'X-Amz-Expires': expiresInSeconds.toString(),
       'X-Amz-SignedHeaders': 'host',
     };
+
+    if (creds.sessionToken) {
+      queryParams['X-Amz-Security-Token'] = creds.sessionToken;
+    }
 
     const sortedQuery = Object.keys(queryParams)
       .sort()
@@ -308,7 +376,7 @@ export class S3PrivateStorageProvider implements DocumentStorageProvider {
       sha256Hex(canonicalRequest),
     ].join('\n');
 
-    const signingKey = getSigningKey(this.config.secretAccessKey, dateStamp, this.config.region);
+    const signingKey = getSigningKey(creds.secretAccessKey, dateStamp, this.config.region);
     const signature = createHmac('sha256', signingKey).update(stringToSign, 'utf8').digest('hex');
 
     const protocol = this.config.endpoint?.startsWith('http://') ? 'http' : 'https';

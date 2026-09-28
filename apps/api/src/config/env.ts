@@ -112,8 +112,11 @@ export const envSchema = z
         // are injected automatically by the ECS runtime (no static access keys required).
         const isAwsIamEnvironment = Boolean(
           process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI ||
+          process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI ||
           process.env.AWS_EXECUTION_ENV ||
-          process.env.ECS_CONTAINER_METADATA_URI_V4
+          process.env.ECS_CONTAINER_METADATA_URI_V4 ||
+          process.env.AWS_ROLE_ARN ||
+          process.env.AWS_WEB_IDENTITY_TOKEN_FILE
         );
 
         if (!isAwsIamEnvironment) {
