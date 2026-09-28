@@ -34,8 +34,9 @@ RUN npm run build:web
 # ─────────────────────────────────────────────────────────────────────────────
 FROM nginx:alpine AS runner
 
-# Remove default nginx configurations
-RUN rm -rf /etc/nginx/conf.d/*
+# Remove default nginx configurations and default pid directive
+RUN rm -rf /etc/nginx/conf.d/* && \
+    sed -i '/pid/d' /etc/nginx/nginx.conf
 
 # Copy hardened nginx configuration
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
@@ -61,5 +62,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD wget -qO- http://localhost:8080/healthz || exit 1
 
-# Start Nginx in foreground
-CMD ["nginx", "-g", "daemon off;"]
+# Start Nginx in foreground with PID configured in writable /tmp
+CMD ["nginx", "-g", "daemon off; pid /tmp/nginx.pid;"]

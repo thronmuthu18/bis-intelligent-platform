@@ -30,7 +30,8 @@ COPY apps/api ./apps/api
 ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
 
 # Generate Prisma client and compile TypeScript to JavaScript
-RUN npm run db:generate --workspace=@bis/api && \
+RUN npm run build --workspace=@bis/shared && \
+    npm run db:generate --workspace=@bis/api && \
     npm run build:api
 
 # Prune development dependencies to keep production footprint minimal
