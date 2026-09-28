@@ -1,0 +1,172 @@
+name: Staging Deployment Pipeline
+
+# ==============================================================================
+# Staging Deployment Pipeline — BIS Intelligent Platform
+# Trigger: Manual Dispatch (workflow_dispatch) or Push to 'develop' branch
+# Applies database migrations safely, builds images, and runs staging smoke tests
+# ==============================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_migrations:
+        description: 'Execute Prisma migration deploy (npx prisma migrate deploy)'
+        required: true
+        default: true
+        type: boolean
+      run_smoke_tests:
+        description: 'Execute staging smoke tests post-rollout'
+        required: true
+        default: true
+        type: boolean
+  push:
+    branches:
+      - develop
+
+concurrency:
+  group: staging-deployment
+  cancel-in-progress: false
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 1: Pre-Flight Verification & Quality Gates
+  # ─────────────────────────────────────────────────────────────────────────────
+  preflight-verification:
+    name: Pre-Flight Quality Gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run db:generate
+        env:
+          DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run Test Suite (100% Pass Required)
+        run: npm test
+        env:
+          NODE_ENV: test
+          JWT_SECRET: "test-jwt-secret-key-32-chars-long-minimum!!"
+          DATABASE_URL: "postgresql://test:test@localhost:5432/test_db"
+          STORAGE_PROVIDER: "local"
+          AI_PROVIDER: "mock"
+          VERIFICATION_PROVIDER: "mock"
+          JOB_QUEUE_PROVIDER: "memory"
+
+      - name: Production Build Verification
+        run: npm run build
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 2: Database Migration (Idempotent, Zero-Downtime Safe)
+  # ─────────────────────────────────────────────────────────────────────────────
+  database-migration:
+    name: Staging Database Migration
+    runs-on: ubuntu-latest
+    needs: preflight-verification
+    environment: staging
+    if: ${{ github.event_name == 'push' || github.event.inputs.run_migrations == 'true' }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      # ───────────────────────────────────────────────────────────────────────
+      # STRICT PRODUCTION/STAGING RULE:
+      # ONLY 'prisma migrate deploy' is permissible!
+      # NEVER run 'prisma migrate reset' or 'prisma db push --force-reset'.
+      # ───────────────────────────────────────────────────────────────────────
+      - name: Run Prisma Migrate Deploy
+        run: |
+          echo "Applying pending migrations to staging database..."
+          npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 3: Build & Package Containers
+  # ─────────────────────────────────────────────────────────────────────────────
+  build-staging-containers:
+    name: Build Staging Container Images
+    runs-on: ubuntu-latest
+    needs: [preflight-verification, database-migration]
+    if: always() && (needs.preflight-verification.result == 'success') && (needs.database-migration.result == 'success' || needs.database-migration.result == 'skipped')
+    environment: staging
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API Staging Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: false # Set to true once staging container registry is provisioned
+          tags: bis-api:staging-${{ github.sha }},bis-api:staging-latest
+
+      - name: Build Web Staging Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: false # Set to true once staging container registry is provisioned
+          tags: bis-web:staging-${{ github.sha }},bis-web:staging-latest
+          build-args: |
+            VITE_API_URL=${{ vars.STAGING_API_URL || '/api/v1' }}
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 4: Post-Deployment Smoke Tests
+  # ─────────────────────────────────────────────────────────────────────────────
+  staging-smoke-tests:
+    name: Staging Health & Smoke Verification
+    runs-on: ubuntu-latest
+    needs: build-staging-containers
+    environment: staging
+    if: ${{ github.event_name == 'push' || github.event.inputs.run_smoke_tests == 'true' }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run Automated Staging Smoke Tests
+        run: |
+          echo "Executing staging smoke test suite against target endpoints..."
+          node scripts/staging-smoke-test.mjs
+        env:
+          STAGING_API_URL: ${{ vars.STAGING_API_URL || 'http://localhost:5000/api/v1' }}
+          STAGING_WEB_URL: ${{ vars.STAGING_WEB_URL || 'http://localhost:8080' }}

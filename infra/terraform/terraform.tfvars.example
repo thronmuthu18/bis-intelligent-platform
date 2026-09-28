@@ -1,0 +1,36 @@
+# ==============================================================================
+# Example Terraform Variable Values for Staging Environment
+# Copy this file to terraform.tfvars and populate with actual deployment values
+# NEVER commit real production/staging secrets to version control
+# ==============================================================================
+
+environment       = "staging"
+aws_region        = "ap-south-1" # Mumbai region for Indian Data Sovereignty (DPDP Act)
+vpc_cidr          = "10.10.0.0/16"
+availability_zones = ["ap-south-1a", "ap-south-1b"]
+
+# Database settings
+db_name                  = "bis_compliance_staging"
+db_username              = "bis_admin"
+db_password              = "CHANGE_ME_TO_A_STRONG_RANDOM_PASSWORD_32_CHARS!"
+db_instance_class        = "db.t4g.small"
+db_allocated_storage     = 20
+db_max_allocated_storage = 100
+
+# Application secrets
+jwt_secret  = "CHANGE_ME_TO_A_STRONG_CRYPTOGRAPHIC_JWT_SECRET_KEY_MIN_32_CHARS!!"
+cors_origin = "https://staging.bis-intelligent.gov.in"
+
+# Container images
+api_image = "ghcr.io/bis/api:staging-latest"
+web_image = "ghcr.io/bis/web:staging-latest"
+
+# Fargate sizing
+container_cpu_api    = 512
+container_memory_api = 1024
+container_cpu_web    = 256
+container_memory_web = 512
+
+# Desired instances
+api_service_desired_count = 1
+web_service_desired_count = 1

@@ -1,0 +1,2008 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Users & Auth
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  USER
+  ADMIN
+  DATA_MANAGER
+}
+
+model User {
+  id               String    @id @default(uuid()) @db.Uuid
+  email            String    @unique
+  name             String
+  passwordHash     String
+  role             UserRole  @default(USER)
+  organizationName String?
+  isActive         Boolean   @default(true)
+  emailVerified    Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  lastLoginAt      DateTime?
+
+  // Relations — to be expanded in future phases
+  products          Product[]
+  documents         ProductDocument[]         @relation("DocumentUploadedByUser")
+  verifiedDocuments ProductDocument[]         @relation("DocumentVerifiedByUser")
+  auditLogs         AuditLog[]
+  aiConversations   AiConversation[]
+  laboratoryReviews ProductLaboratoryReview[]
+  assignedComplianceTasks ComplianceTask[]
+  hallmarkVerifications   HallmarkVerification[]
+  consumerVerifications   ConsumerVerification[]
+  preference              UserPreference?
+
+  @@index([email])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Products & Compliance Workflow
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ProductStatus {
+  DRAFT
+  INFORMATION_COLLECTION
+  READY_FOR_ANALYSIS
+  ACTIVE
+  ARCHIVED
+}
+
+enum ComplianceWorkflowStage {
+  DRAFT
+  PRODUCT_IDENTIFIED
+  INFORMATION_COLLECTION
+  DOCUMENT_COLLECTION
+  ANALYSIS
+  STANDARD_IDENTIFICATION
+  CERTIFICATION_ANALYSIS
+  TESTING_ANALYSIS
+  LAB_SELECTION
+  DOCUMENT_VERIFICATION
+  READY_FOR_OFFICIAL_ACTION
+  OFFICIAL_ACTION
+  COMPLIANCE_TRACKING
+}
+
+model Product {
+  id                     String                  @id @default(uuid()) @db.Uuid
+  userId                 String                  @db.Uuid
+  name                   String
+  category               String
+  description            String?
+  manufacturerType       String?
+  intendedUse            String?
+  targetMarket           String?
+  countryOfManufacture   String?
+  manufacturerName       String?
+  manufacturerAddress    String?
+  manufacturingCountry   String?
+  manufacturingState     String?
+  hsnCode                String?
+  productCategory        String?
+  technicalSpecifications Json?
+  status                 ProductStatus           @default(DRAFT)
+  workflowStage          ComplianceWorkflowStage @default(DRAFT)
+  isActive               Boolean                 @default(true)
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  lastActivityAt         DateTime?
+
+  user                          User                                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents                     ProductDocument[]
+  documentCompletenessAnalyses  ProductDocumentCompletenessAnalysis[]
+  aiConversations               AiConversation[]
+  auditLogs                     AuditLog[]
+  productAnswers                ProductAnswer[]
+  attributes                    ProductAttribute[]
+  standardAnalyses              ProductStandardAnalysis[]
+  standardReviews               ProductStandardReview[]
+  certificationAnalyses         ProductCertificationAnalysis[]
+  schemeReviews                 ProductSchemeReview[]
+  testingAnalyses               ProductTestingAnalysis[]
+  laboratoryReviews             ProductLaboratoryReview[]
+  complianceJourneys            ComplianceJourney[]
+  applicationDossiers           ApplicationDossier[]
+  regulatoryImpacts             RegulatoryImpact[]
+  complianceAlerts              ComplianceAlert[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([category])
+  @@index([createdAt])
+  @@map("products")
+}
+
+model ProductAnswer {
+  id         String   @id @default(uuid()) @db.Uuid
+  productId  String   @db.Uuid
+  question   String
+  answer     String
+  answeredAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("product_answers")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Phase 9 — Document Intelligence Models & Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum DocumentType {
+  TEST_REPORT
+  CALIBRATION_CERTIFICATE
+  PRODUCT_MANUAL
+  TECHNICAL_SPECIFICATION
+  FACTORY_LAYOUT
+  MANUFACTURING_PROCESS_DOCUMENT
+  QUALITY_CONTROL_DOCUMENT
+  RAW_MATERIAL_DOCUMENT
+  CERTIFICATE
+  APPLICATION_DOCUMENT
+  DECLARATION
+  DECLARATION_OF_CONFORMITY
+  LABORATORY_DOCUMENT
+  IDENTITY_DOCUMENT
+  FACTORY_INSPECTION_REPORT
+  SAFETY_DATA_SHEET
+  LICENSE
+  GOVERNMENT_NOTIFICATION
+  STANDARDS_DOCUMENT
+  OTHER
+  UNKNOWN
+}
+
+enum DocumentProcessingStatus {
+  UPLOADED
+  VALIDATING
+  STORED
+  EXTRACTING
+  EXTRACTED
+  CLASSIFYING
+  CLASSIFIED
+  ANALYZING
+  ANALYZED
+  NEEDS_REVIEW
+  VERIFIED
+  FAILED
+}
+
+enum DocumentVerificationStatus {
+  UNVERIFIED
+  NEEDS_REVIEW
+  VERIFIED
+  REJECTED
+}
+
+enum DocumentCompletenessStatus {
+  COMPLETE
+  PARTIALLY_COMPLETE
+  MISSING_DOCUMENTS
+  NEEDS_REVIEW
+  INSUFFICIENT_EVIDENCE
+}
+
+enum ChecklistMatchStatus {
+  MISSING
+  UPLOADED
+  EXTRACTED
+  MATCHED
+  NEEDS_REVIEW
+  VERIFIED
+  EXPIRED
+  INVALID
+}
+
+enum TestRequirementMatchStatus {
+  MATCHED
+  PARTIAL_MATCH
+  NEEDS_REVIEW
+  NOT_MATCHED
+  UNVERIFIED
+}
+
+model ProductDocument {
+  id                       String                     @id @default(uuid()) @db.Uuid
+  productId                String                     @db.Uuid
+  uploadedByUserId         String                     @db.Uuid
+  originalFileName         String
+  storedFileName           String
+  storageKey               String
+  mimeType                 String
+  fileSize                 Int
+  fileHash                 String?
+  documentType             DocumentType               @default(UNKNOWN)
+  classificationConfidence Float?
+  classificationReasons    Json?
+  processingStatus         DocumentProcessingStatus   @default(UPLOADED)
+  extractionStatus         String?                    @default("PENDING")
+  verificationStatus       DocumentVerificationStatus @default(UNVERIFIED)
+  pageCount                Int                        @default(1)
+  extractedText            String?                    @db.Text
+  extractionMetadata       Json?
+  version                  Int                        @default(1)
+  documentFamily           String?
+  supersedesDocumentId     String?                    @db.Uuid
+  isCurrent                Boolean                    @default(true)
+  verifiedByUserId         String?                    @db.Uuid
+  verifiedAt               DateTime?
+  verificationNotes        String?                    @db.Text
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
+  processedAt              DateTime?
+
+  product              Product                         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  uploadedByUser       User                            @relation("DocumentUploadedByUser", fields: [uploadedByUserId], references: [id], onDelete: Cascade)
+  verifiedByUser       User?                           @relation("DocumentVerifiedByUser", fields: [verifiedByUserId], references: [id], onDelete: SetNull)
+  supersedesDocument   ProductDocument?                @relation("DocumentVersions", fields: [supersedesDocumentId], references: [id], onDelete: SetNull)
+  supersededBy         ProductDocument[]               @relation("DocumentVersions")
+  pageEvidence         DocumentPageEvidence[]
+  structuredExtraction DocumentStructuredExtraction?
+  checklistMatches     DocumentChecklistMatch[]
+  testMatches          DocumentTestMatch[]
+  dossierItems         ApplicationDossierItem[]
+
+  @@index([productId])
+  @@index([uploadedByUserId])
+  @@index([documentType])
+  @@index([processingStatus])
+  @@index([verificationStatus])
+  @@index([fileHash])
+  @@index([documentFamily])
+  @@map("product_documents")
+}
+
+model DocumentPageEvidence {
+  id          String   @id @default(uuid()) @db.Uuid
+  documentId  String   @db.Uuid
+  pageNumber  Int      @default(1)
+  claim       String
+  sourceText  String   @db.Text
+  confidence  Float?
+  boundingBox Json?
+  sectionKey  String?
+  createdAt   DateTime @default(now())
+
+  document ProductDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([pageNumber])
+  @@map("document_page_evidence")
+}
+
+model DocumentStructuredExtraction {
+  id                  String       @id @default(uuid()) @db.Uuid
+  documentId          String       @unique @db.Uuid
+  extractedType       DocumentType @default(UNKNOWN)
+  laboratoryName      String?
+  reportNumber        String?
+  reportDate          DateTime?
+  certificateNumber   String?
+  calibrationDate     DateTime?
+  calibrationDueDate  DateTime?
+  calibrationInterval String?
+  traceability        String?
+  productName         String?
+  modelNumber         String?
+  manufacturerName    String?
+  standardNumber      String?
+  passFailStatus      String?
+  validityStatus      String?
+  extractedFields     Json         @default("{}")
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  document ProductDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("document_structured_extractions")
+}
+
+model DocumentChecklistMatch {
+  id                String               @id @default(uuid()) @db.Uuid
+  documentId        String               @db.Uuid
+  checklistItemId   String?              @db.Uuid
+  checklistCategory String?
+  requirementTitle  String?
+  matchStatus       ChecklistMatchStatus @default(MATCHED)
+  confidence        Float?
+  matchReason       String?              @db.Text
+  evidencePage      Int?
+  evidenceSnippet   String?              @db.Text
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  document      ProductDocument                     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  checklistItem ProductDocumentationChecklistItem? @relation(fields: [checklistItemId], references: [id], onDelete: SetNull)
+
+  @@index([documentId])
+  @@index([checklistItemId])
+  @@map("document_checklist_matches")
+}
+
+model DocumentTestMatch {
+  id                String                     @id @default(uuid()) @db.Uuid
+  documentId        String                     @db.Uuid
+  testRequirementId String?                    @db.Uuid
+  testName          String
+  testMethod        String?
+  standardNumber    String?
+  parameter         String?
+  extractedResult   String?
+  passFailStatus    String?
+  matchStatus       TestRequirementMatchStatus @default(MATCHED)
+  evidencePage      Int?
+  evidenceSnippet   String?                    @db.Text
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+
+  document        ProductDocument         @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  testRequirement ProductTestRequirement? @relation(fields: [testRequirementId], references: [id], onDelete: SetNull)
+
+  @@index([documentId])
+  @@index([testRequirementId])
+  @@map("document_test_matches")
+}
+
+model ProductDocumentCompletenessAnalysis {
+  id                   String                     @id @default(uuid()) @db.Uuid
+  productId            String                     @db.Uuid
+  score                Int                        @default(0)
+  status               DocumentCompletenessStatus @default(INSUFFICIENT_EVIDENCE)
+  totalRequired        Int                        @default(0)
+  verifiedCount        Int                        @default(0)
+  matchedCount         Int                        @default(0)
+  needsReviewCount     Int                        @default(0)
+  missingCount         Int                        @default(0)
+  expiredCount         Int                        @default(0)
+  missingDocumentTypes Json                       @default("[]")
+  blockers             Json                       @default("[]")
+  nextSteps            Json                       @default("[]")
+  calculatedAt         DateTime                   @default(now())
+  createdAt            DateTime                   @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("product_document_completeness_analyses")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  BIS Knowledge Layer Enums (Phase 4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum SourceType {
+  BIS_OFFICIAL
+  GOVERNMENT_GAZETTE
+  BIS_DOCUMENT
+  OTHER_REFERENCE
+}
+
+enum AuthorityLevel {
+  AUTHORITATIVE
+  REFERENCE
+  UNVERIFIED
+}
+
+enum IngestionStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+enum StandardStatus {
+  CURRENT
+  SUPERSEDED
+  WITHDRAWN
+  DRAFT
+  UNKNOWN
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Source Documents & Provenance Registry
+// ─────────────────────────────────────────────────────────────────────────────
+
+model SourceDocument {
+  id             String         @id @default(uuid()) @db.Uuid
+  title          String
+  url            String
+  sourceType     SourceType     @default(BIS_OFFICIAL)
+  authorityLevel AuthorityLevel @default(AUTHORITATIVE)
+  documentType   String?
+  publishedAt    DateTime?
+  retrievedAt    DateTime       @default(now())
+  contentHash    String?
+  versionLabel   String?
+  status         String         @default("ACTIVE")
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  standards              Standard[]
+  standardVersions       StandardVersion[]
+  standardAmendments     StandardAmendment[]
+  qcos                   QCO[]
+  schemes                Scheme[]
+  productManuals         ProductManual[]
+  standardSchemeMappings StandardSchemeMapping[]
+  knowledgeChunks        KnowledgeChunk[]
+  laboratories           Laboratory[]
+  laboratoryCapabilities LaboratoryCapability[]
+  testRequirements       ProductTestRequirement[]
+  regulatoryChangeEvents RegulatoryChangeEvent[]
+  complianceRequirements ComplianceRequirement[]
+  hallmarkingCentres     HallmarkingCentre[]
+  hallmarkVerifications  HallmarkVerification[]
+  consumerServices       ConsumerService[]
+
+  @@index([url])
+  @@index([sourceType])
+  @@index([authorityLevel])
+  @@map("source_documents")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Indian Standards (IS) Knowledge Base
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Standard {
+  id               String         @id @default(uuid()) @db.Uuid
+  isNumber         String         @unique
+  canonicalNumber  String
+  title            String
+  shortTitle       String?
+  scope            String?        @db.Text
+  status           StandardStatus @default(CURRENT)
+  sector           String?
+  department       String?
+  language         String         @default("English")
+  currentEdition   String?
+  publicationDate  DateTime?
+  withdrawalDate   DateTime?
+  sourceDocumentId String?        @db.Uuid
+  isActive         Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  sourceDocument       SourceDocument?         @relation(fields: [sourceDocumentId], references: [id])
+  versions             StandardVersion[]
+  amendments           StandardAmendment[]
+  qcoMappings          QCOStandardMapping[]
+  schemeMappings       StandardSchemeMapping[]
+  productManuals       ProductManual[]
+  citations            Citation[]
+  certificationSchemes CertificationScheme[]
+  knowledgeChunks      KnowledgeChunk[]
+  productMatches         ProductStandardMatch[]
+  productReviews         ProductStandardReview[]
+  schemeRecommendations  ProductSchemeRecommendation[]
+  qcoInformationItems    ProductQcoInformationItem[]
+  testRequirements       ProductTestRequirement[]
+  laboratoryCapabilities LaboratoryCapability[]
+  complianceRequirements ComplianceRequirement[]
+
+  @@index([isNumber])
+  @@index([canonicalNumber])
+  @@index([status])
+  @@index([sector])
+  @@index([department])
+  @@map("standards")
+}
+
+model StandardVersion {
+  id               String          @id @default(uuid()) @db.Uuid
+  standardId       String          @db.Uuid
+  edition          String
+  year             Int?
+  publicationDate  DateTime?
+  status           StandardStatus  @default(CURRENT)
+  documentUrl      String?
+  sourceDocumentId String?         @db.Uuid
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  standard        Standard         @relation(fields: [standardId], references: [id], onDelete: Cascade)
+  sourceDocument  SourceDocument?  @relation(fields: [sourceDocumentId], references: [id])
+  knowledgeChunks KnowledgeChunk[]
+
+  @@index([standardId])
+  @@map("standard_versions")
+}
+
+model StandardAmendment {
+  id               String          @id @default(uuid()) @db.Uuid
+  standardId       String          @db.Uuid
+  amendmentNumber  String
+  title            String?
+  publicationDate  DateTime?
+  effectiveDate    DateTime?
+  documentUrl      String?
+  sourceDocumentId String?         @db.Uuid
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  standard        Standard         @relation(fields: [standardId], references: [id], onDelete: Cascade)
+  sourceDocument  SourceDocument?  @relation(fields: [sourceDocumentId], references: [id])
+  knowledgeChunks KnowledgeChunk[]
+
+  @@index([standardId])
+  @@map("standard_amendments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Quality Control Orders (QCOs)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model QCO {
+  id               String          @id @default(uuid()) @db.Uuid
+  name             String
+  orderNumber      String          @unique
+  ministry         String?
+  notificationDate DateTime?
+  effectiveDate    DateTime?
+  status           String          @default("IN_FORCE")
+  documentUrl      String?
+  sourceDocumentId String?         @db.Uuid
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  sourceDocument   SourceDocument?      @relation(fields: [sourceDocumentId], references: [id])
+  standardMappings QCOStandardMapping[]
+  knowledgeChunks  KnowledgeChunk[]
+  qcoInformationItems ProductQcoInformationItem[]
+
+  @@index([orderNumber])
+  @@index([effectiveDate])
+  @@index([status])
+  @@map("qcos")
+}
+
+model QCOStandardMapping {
+  id                 String   @id @default(uuid()) @db.Uuid
+  qcoId              String   @db.Uuid
+  standardId         String   @db.Uuid
+  productDescription String?
+  notes              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  qco      QCO      @relation(fields: [qcoId], references: [id], onDelete: Cascade)
+  standard Standard @relation(fields: [standardId], references: [id], onDelete: Cascade)
+
+  @@unique([qcoId, standardId])
+  @@index([qcoId])
+  @@index([standardId])
+  @@map("qco_standard_mappings")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Certification Schemes & Product Manuals
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Scheme {
+  id               String          @id @default(uuid()) @db.Uuid
+  name             String
+  code             String          @unique
+  description      String?         @db.Text
+  sourceDocumentId String?         @db.Uuid
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  sourceDocument   SourceDocument?         @relation(fields: [sourceDocumentId], references: [id])
+  standardMappings StandardSchemeMapping[]
+  knowledgeChunks  KnowledgeChunk[]
+  schemeRecommendations   ProductSchemeRecommendation[]
+  schemeReviews           ProductSchemeReview[]
+  feeEstimates            CertificationFeeEstimate[]
+  documentationChecklists ProductDocumentationChecklistItem[]
+  applicationRequirements ProductApplicationRequirementItem[]
+  testRequirements        ProductTestRequirement[]
+  externalLabRequirements ProductExternalLabRequirement[]
+
+  @@index([code])
+  @@map("schemes")
+}
+
+model StandardSchemeMapping {
+  id               String          @id @default(uuid()) @db.Uuid
+  standardId       String          @db.Uuid
+  schemeId         String          @db.Uuid
+  sourceDocumentId String?         @db.Uuid
+  notes            String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  standard       Standard        @relation(fields: [standardId], references: [id], onDelete: Cascade)
+  scheme         Scheme          @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  sourceDocument SourceDocument? @relation(fields: [sourceDocumentId], references: [id])
+
+  @@unique([standardId, schemeId])
+  @@index([standardId])
+  @@index([schemeId])
+  @@map("standard_scheme_mappings")
+}
+
+model ProductManual {
+  id               String          @id @default(uuid()) @db.Uuid
+  standardId       String          @db.Uuid
+  title            String
+  documentUrl      String?
+  version          String?
+  publicationDate  DateTime?
+  sourceDocumentId String?         @db.Uuid
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  standard        Standard         @relation(fields: [standardId], references: [id], onDelete: Cascade)
+  sourceDocument  SourceDocument?  @relation(fields: [sourceDocumentId], references: [id])
+  knowledgeChunks KnowledgeChunk[]
+
+  @@index([standardId])
+  @@map("product_manuals")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Knowledge Chunks & Vector Store (Phase 5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model KnowledgeChunk {
+  id                  String          @id @default(uuid()) @db.Uuid
+  sourceDocumentId    String?         @db.Uuid
+  standardId          String?         @db.Uuid
+  standardVersionId   String?         @db.Uuid
+  standardAmendmentId String?         @db.Uuid
+  qcoId               String?         @db.Uuid
+  schemeId            String?         @db.Uuid
+  productManualId     String?         @db.Uuid
+  chunkType           String
+  sectionTitle        String?
+  content             String          @db.Text
+  chunkIndex          Int             @default(0)
+  embedding           Float[]
+  embeddingModel      String?
+  embeddingDimension  Int?
+  embeddingVersion    String?
+  contentHash         String?
+  embeddingStatus     IngestionStatus @default(PENDING)
+  metadata            Json?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  sourceDocument    SourceDocument?    @relation(fields: [sourceDocumentId], references: [id])
+  standard          Standard?          @relation(fields: [standardId], references: [id], onDelete: Cascade)
+  standardVersion   StandardVersion?   @relation(fields: [standardVersionId], references: [id], onDelete: Cascade)
+  standardAmendment StandardAmendment? @relation(fields: [standardAmendmentId], references: [id], onDelete: Cascade)
+  qco               QCO?               @relation(fields: [qcoId], references: [id], onDelete: Cascade)
+  scheme            Scheme?            @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  productManual     ProductManual?     @relation(fields: [productManualId], references: [id], onDelete: Cascade)
+
+  @@index([standardId])
+  @@index([chunkType])
+  @@index([embeddingStatus])
+  @@index([contentHash])
+  @@map("knowledge_chunks")
+}
+
+model IngestionRun {
+  id               String          @id @default(uuid()) @db.Uuid
+  sourceName       String
+  sourceUrl        String?
+  startedAt        DateTime        @default(now())
+  completedAt      DateTime?
+  status           IngestionStatus @default(PENDING)
+  recordsProcessed Int             @default(0)
+  recordsCreated   Int             @default(0)
+  recordsUpdated   Int             @default(0)
+  recordsSkipped   Int             @default(0)
+  recordsFailed    Int             @default(0)
+  errorSummary     String?         @db.Text
+  triggeredBy      String?
+  createdAt        DateTime        @default(now())
+
+  @@index([status])
+  @@index([startedAt])
+  @@map("ingestion_runs")
+}
+
+model CertificationScheme {
+  id          String   @id @default(uuid()) @db.Uuid
+  standardId  String   @db.Uuid
+  name        String
+  schemeCode  String?
+  description String?
+  bisUrl      String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  standard Standard @relation(fields: [standardId], references: [id], onDelete: Cascade)
+
+  @@index([standardId])
+  @@map("certification_schemes")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Testing & Laboratories
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Laboratory {
+  id               String              @id @default(uuid()) @db.Uuid
+  name             String
+  code             String?
+  organizationType LabOrganizationType @default(BIS_RECOGNIZED)
+  address          String?
+  city             String?
+  state            String?
+  country          String              @default("India")
+  pincode          String?
+  phone            String?
+  email            String?
+  website          String?
+  isNabl           Boolean             @default(false)
+  isBisLab         Boolean             @default(false)
+  status           String              @default("ACTIVE")
+  sourceDocumentId String?             @db.Uuid
+  sourceUrl        String?
+  authorityLevel   AuthorityLevel      @default(AUTHORITATIVE)
+  isVerified       Boolean             @default(true)
+  isActive         Boolean             @default(true)
+  lastVerifiedAt   DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  sourceDocument SourceDocument?           @relation(fields: [sourceDocumentId], references: [id])
+  capabilities   LaboratoryCapability[]
+  reviews        ProductLaboratoryReview[]
+
+  @@index([city])
+  @@index([state])
+  @@index([status])
+  @@index([organizationType])
+  @@map("laboratories")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Citations / Evidence (source provenance for AI findings)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Citation {
+  id              String   @id @default(uuid()) @db.Uuid
+  standardId      String?  @db.Uuid
+  sourceUrl       String
+  sourceTitle     String
+  authority       String
+  documentType    String
+  publicationDate DateTime?
+  revisionDate    DateTime?
+  retrievedAt     DateTime
+  relevantSection String?
+  relevantClause  String?
+  excerpt         String?
+  isVerified      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  standard Standard? @relation(fields: [standardId], references: [id])
+
+  @@index([standardId])
+  @@map("citations")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  AI Conversations
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum AiMessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+model AiConversation {
+  id        String   @id @default(uuid()) @db.Uuid
+  productId String?  @db.Uuid
+  userId    String   @db.Uuid
+  title     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product  Product?    @relation(fields: [productId], references: [id])
+  user     User        @relation(fields: [userId], references: [id])
+  messages AiMessage[]
+
+  @@index([productId])
+  @@index([userId])
+  @@map("ai_conversations")
+}
+
+model AiMessage {
+  id             String        @id @default(uuid()) @db.Uuid
+  conversationId String        @db.Uuid
+  role           AiMessageRole
+  content        String
+  metadata       Json?
+  createdAt      DateTime      @default(now())
+
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@map("ai_messages")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Audit Logs
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @db.Uuid
+  productId  String?  @db.Uuid
+  action     String
+  entityType String?
+  entityId   String?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user    User?    @relation(fields: [userId], references: [id])
+  product Product? @relation(fields: [productId], references: [id])
+
+  @@index([userId])
+  @@index([productId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Product Intelligence & Standard Matching (Phase 6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum AttributeSource {
+  USER
+  AI_EXTRACTED
+  USER_CONFIRMED
+  SYSTEM_NORMALIZED
+}
+
+enum AnalysisStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum MatchLevel {
+  HIGHLY_RELEVANT
+  RELEVANT
+  POTENTIALLY_RELEVANT
+}
+
+enum ReviewDecision {
+  CONFIRMED
+  REJECTED
+  NEEDS_REVIEW
+}
+
+model ProductAttribute {
+  id              String          @id @default(uuid()) @db.Uuid
+  productId       String          @db.Uuid
+  attributeKey    String
+  attributeValue  String          @db.Text
+  normalizedValue String          @db.Text
+  source          AttributeSource @default(USER)
+  confidence      Float           @default(1.0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, attributeKey])
+  @@index([productId])
+  @@index([attributeKey])
+  @@map("product_attributes")
+}
+
+model ProductStandardAnalysis {
+  id              String         @id @default(uuid()) @db.Uuid
+  productId       String         @db.Uuid
+  status          AnalysisStatus @default(PENDING)
+  analysisVersion String         @default("1.0.0")
+  inputHash       String
+  errorSummary    String?        @db.Text
+  completedAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  product Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
+  matches ProductStandardMatch[]
+  certificationAnalyses ProductCertificationAnalysis[]
+
+  @@index([productId])
+  @@index([status])
+  @@index([inputHash])
+  @@map("product_standard_analyses")
+}
+
+model ProductStandardMatch {
+  id             String                  @id @default(uuid()) @db.Uuid
+  analysisId     String                  @db.Uuid
+  standardId     String                  @db.Uuid
+  relevanceScore Float
+  matchLevel     MatchLevel              @default(POTENTIALLY_RELEVANT)
+  reasons        Json
+  evidence       Json?
+  rank           Int                     @default(1)
+  createdAt      DateTime                @default(now())
+
+  analysis ProductStandardAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  standard Standard                @relation(fields: [standardId], references: [id], onDelete: Cascade)
+
+  @@index([analysisId])
+  @@index([standardId])
+  @@index([matchLevel])
+  @@map("product_standard_matches")
+}
+
+model ProductStandardReview {
+  id         String         @id @default(uuid()) @db.Uuid
+  productId  String         @db.Uuid
+  standardId String         @db.Uuid
+  decision   ReviewDecision @default(NEEDS_REVIEW)
+  note       String?        @db.Text
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  standard Standard @relation(fields: [standardId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, standardId])
+  @@index([productId])
+  @@index([standardId])
+  @@map("product_standard_reviews")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Certification Intelligence & Scheme Recommendation (Phase 7)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum SchemeRelevanceLevel {
+  RELEVANT
+  POTENTIALLY_RELEVANT
+  NEEDS_REVIEW
+  INSUFFICIENT_EVIDENCE
+}
+
+enum DocumentRequiredStatus {
+  REQUIRED
+  CONDITIONALLY_REQUIRED
+  REFERENCE
+  UNKNOWN
+}
+
+enum FeeType {
+  APPLICATION_FEE
+  PROCESSING_FEE
+  TESTING_FEE
+  INSPECTION_FEE
+  ANNUAL_FEE
+  REGISTRATION_FEE
+  OTHER
+}
+
+enum FeeStatus {
+  OFFICIAL_FEE
+  ESTIMATED_FEE
+  NOT_AVAILABLE
+  VARIABLE
+}
+
+enum CertificationReadinessStatus {
+  READY_FOR_DOCUMENT_REVIEW
+  MISSING_DOCUMENTATION
+  MISSING_PRODUCT_INFORMATION
+  INSUFFICIENT_BIS_EVIDENCE
+  NEEDS_USER_REVIEW
+}
+
+model ProductCertificationAnalysis {
+  id                         String                       @id @default(uuid()) @db.Uuid
+  productId                  String                       @db.Uuid
+  productStandardAnalysisId  String?                      @db.Uuid
+  status                     AnalysisStatus               @default(PENDING)
+  analysisVersion            String                       @default("1.0.0")
+  inputHash                  String
+  readinessStatus            CertificationReadinessStatus @default(NEEDS_USER_REVIEW)
+  readinessScore             Int                          @default(50)
+  readinessSummary           String?                      @db.Text
+  errorSummary               String?                      @db.Text
+  completedAt                DateTime?
+  createdAt                  DateTime                     @default(now())
+  updatedAt                  DateTime                     @updatedAt
+
+  product                 Product                              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  standardAnalysis        ProductStandardAnalysis?             @relation(fields: [productStandardAnalysisId], references: [id], onDelete: SetNull)
+  schemeRecommendations   ProductSchemeRecommendation[]
+  feeEstimates            CertificationFeeEstimate[]
+  documentationChecklist  ProductDocumentationChecklistItem[]
+  applicationRequirements ProductApplicationRequirementItem[]
+  qcoInformation          ProductQcoInformationItem[]
+  testingAnalyses         ProductTestingAnalysis[]
+
+  @@index([productId])
+  @@index([status])
+  @@index([inputHash])
+  @@map("product_certification_analyses")
+}
+
+model ProductSchemeRecommendation {
+  id              String               @id @default(uuid()) @db.Uuid
+  analysisId      String               @db.Uuid
+  schemeId        String               @db.Uuid
+  standardId      String               @db.Uuid
+  relevanceLevel  SchemeRelevanceLevel @default(POTENTIALLY_RELEVANT)
+  confidenceScore Float
+  reasons         Json
+  evidence        Json?
+  rank            Int                  @default(1)
+  createdAt       DateTime             @default(now())
+
+  analysis ProductCertificationAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  scheme   Scheme                       @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  standard Standard                     @relation(fields: [standardId], references: [id], onDelete: Cascade)
+
+  @@index([analysisId])
+  @@index([schemeId])
+  @@index([standardId])
+  @@index([relevanceLevel])
+  @@map("product_scheme_recommendations")
+}
+
+model ProductSchemeReview {
+  id        String         @id @default(uuid()) @db.Uuid
+  productId String         @db.Uuid
+  schemeId  String         @db.Uuid
+  decision  ReviewDecision @default(NEEDS_REVIEW)
+  note      String?        @db.Text
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  scheme  Scheme  @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, schemeId])
+  @@index([productId])
+  @@index([schemeId])
+  @@map("product_scheme_reviews")
+}
+
+model CertificationFeeEstimate {
+  id            String    @id @default(uuid()) @db.Uuid
+  analysisId    String    @db.Uuid
+  schemeId      String?   @db.Uuid
+  feeType       FeeType   @default(OTHER)
+  amount        Float?
+  currency      String    @default("INR")
+  status        FeeStatus @default(NOT_AVAILABLE)
+  source        String?
+  effectiveDate String?
+  notes         String?   @db.Text
+  createdAt     DateTime  @default(now())
+
+  analysis ProductCertificationAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  scheme   Scheme?                      @relation(fields: [schemeId], references: [id], onDelete: SetNull)
+
+  @@index([analysisId])
+  @@index([schemeId])
+  @@index([feeType])
+  @@map("certification_fee_estimates")
+}
+
+model ProductDocumentationChecklistItem {
+  id             String                 @id @default(uuid()) @db.Uuid
+  analysisId     String                 @db.Uuid
+  schemeId       String?                @db.Uuid
+  category       String
+  documentName   String
+  requiredStatus DocumentRequiredStatus @default(CONDITIONALLY_REQUIRED)
+  reason         String                 @db.Text
+  source         String?
+  notes          String?                @db.Text
+  rank           Int                    @default(1)
+  createdAt      DateTime               @default(now())
+
+  analysis        ProductCertificationAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  scheme          Scheme?                      @relation(fields: [schemeId], references: [id], onDelete: SetNull)
+  documentMatches DocumentChecklistMatch[]
+
+  @@index([analysisId])
+  @@index([schemeId])
+  @@map("product_documentation_checklist_items")
+}
+
+model ProductApplicationRequirementItem {
+  id               String   @id @default(uuid()) @db.Uuid
+  analysisId       String   @db.Uuid
+  schemeId         String?  @db.Uuid
+  formName         String
+  formPurpose      String   @db.Text
+  applicableScheme String
+  source           String?
+  officialUrl      String?
+  rank             Int      @default(1)
+  createdAt        DateTime @default(now())
+
+  analysis ProductCertificationAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  scheme   Scheme?                      @relation(fields: [schemeId], references: [id], onDelete: SetNull)
+
+  @@index([analysisId])
+  @@index([schemeId])
+  @@map("product_application_requirement_items")
+}
+
+model ProductQcoInformationItem {
+  id               String   @id @default(uuid()) @db.Uuid
+  analysisId       String   @db.Uuid
+  qcoId            String   @db.Uuid
+  standardId       String   @db.Uuid
+  qcoTitle         String
+  orderNumber      String
+  issuingAuthority String?
+  notificationDate DateTime?
+  effectiveDate    DateTime?
+  sourceUrl        String?
+  status           String   @default("IN_FORCE")
+  isMandatory      Boolean  @default(true)
+  notes            String?  @db.Text
+  createdAt        DateTime @default(now())
+
+  analysis ProductCertificationAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  qco      QCO                          @relation(fields: [qcoId], references: [id], onDelete: Cascade)
+  standard Standard                     @relation(fields: [standardId], references: [id], onDelete: Cascade)
+
+  @@index([analysisId])
+  @@index([qcoId])
+  @@index([standardId])
+  @@map("product_qco_information_items")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Testing & Laboratory Intelligence Enums (Phase 8)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum TestCategory {
+  SAFETY
+  PERFORMANCE
+  ELECTRICAL
+  MECHANICAL
+  THERMAL
+  ENVIRONMENTAL
+  CHEMICAL
+  EMC
+  DURABILITY
+  MARKING
+  OTHER
+  UNKNOWN
+}
+
+enum TestApplicability {
+  FACTORY
+  EXTERNAL_LAB
+  BOTH
+  UNKNOWN
+}
+
+enum TestRequirementStatus {
+  REQUIRED
+  CONDITIONALLY_REQUIRED
+  RECOMMENDED
+  UNKNOWN
+}
+
+enum EquipmentRequiredStatus {
+  REQUIRED
+  CONDITIONALLY_REQUIRED
+  REFERENCE
+  UNKNOWN
+}
+
+enum ExternalLabRequirementType {
+  EXTERNAL_LAB_REQUIRED
+  EXTERNAL_LAB_CONDITIONALLY_REQUIRED
+  FACTORY_TESTING
+  UNKNOWN
+}
+
+enum TestingReadinessStatus {
+  TESTING_READY
+  NEEDS_REVIEW
+  MISSING_CALIBRATION
+  MISSING_LAB_REPORT
+  INSUFFICIENT_EVIDENCE
+}
+
+enum LabOrganizationType {
+  BIS_RECOGNIZED
+  NABL_ACCREDITED
+  BIS_AND_NABL
+  OTHER
+}
+
+enum LabAccreditationStatus {
+  ACCREDITED
+  NOT_ACCREDITED
+  UNKNOWN
+}
+
+enum LabRecognitionStatus {
+  BIS_RECOGNIZED
+  NOT_BIS_RECOGNIZED
+  UNKNOWN
+}
+
+enum LabDecision {
+  SHORTLISTED
+  SELECTED
+  REJECTED
+  NEEDS_REVIEW
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Testing & Laboratory Intelligence Models (Phase 8)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ProductTestingAnalysis {
+  id                      String                 @id @default(uuid()) @db.Uuid
+  productId               String                 @db.Uuid
+  certificationAnalysisId String?                @db.Uuid
+  status                  AnalysisStatus         @default(PENDING)
+  analysisVersion         String                 @default("1.0.0")
+  inputHash               String
+  readinessStatus         TestingReadinessStatus @default(NEEDS_REVIEW)
+  readinessScore          Int                    @default(50)
+  readinessSummary        String?                @db.Text
+  blockers                Json?
+  nextSteps               Json?
+  errorSummary            String?                @db.Text
+  completedAt             DateTime?
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+
+  product               Product                        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  certificationAnalysis ProductCertificationAnalysis? @relation(fields: [certificationAnalysisId], references: [id], onDelete: SetNull)
+  requirements          ProductTestRequirement[]
+  equipment             ProductTestEquipment[]
+  calibration           ProductCalibrationRequirement[]
+  laboratoryRequirements ProductExternalLabRequirement[]
+
+  @@index([productId])
+  @@index([status])
+  @@index([inputHash])
+  @@map("product_testing_analyses")
+}
+
+model ProductTestRequirement {
+  id               String                @id @default(uuid()) @db.Uuid
+  analysisId       String                @db.Uuid
+  standardId       String                @db.Uuid
+  schemeId         String?               @db.Uuid
+  testName         String
+  testCategory     TestCategory          @default(UNKNOWN)
+  testMethod       String?
+  clause           String?
+  parameter        String?
+  requirementValue String?               @db.Text
+  unit             String?
+  applicability    TestApplicability     @default(UNKNOWN)
+  sourceDocumentId String?               @db.Uuid
+  sourceUrl        String?
+  evidence         Json?
+  status           TestRequirementStatus @default(REQUIRED)
+  rank             Int                   @default(1)
+  createdAt        DateTime              @default(now())
+
+  analysis        ProductTestingAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  standard        Standard               @relation(fields: [standardId], references: [id], onDelete: Cascade)
+  scheme          Scheme?                @relation(fields: [schemeId], references: [id], onDelete: SetNull)
+  sourceDocument  SourceDocument?        @relation(fields: [sourceDocumentId], references: [id])
+  documentMatches DocumentTestMatch[]
+
+  @@index([analysisId])
+  @@index([standardId])
+  @@index([schemeId])
+  @@index([testCategory])
+  @@map("product_test_requirements")
+}
+
+model ProductTestEquipment {
+  id                  String                  @id @default(uuid()) @db.Uuid
+  analysisId          String                  @db.Uuid
+  equipmentName       String
+  purpose             String                  @db.Text
+  requiredStatus      EquipmentRequiredStatus @default(REQUIRED)
+  calibrationRequired Boolean                 @default(true)
+  calibrationInterval String?
+  source              String?
+  notes               String?                 @db.Text
+  rank                Int                     @default(1)
+  createdAt           DateTime                @default(now())
+
+  analysis ProductTestingAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  @@index([analysisId])
+  @@map("product_test_equipments")
+}
+
+model ProductCalibrationRequirement {
+  id                    String   @id @default(uuid()) @db.Uuid
+  analysisId            String   @db.Uuid
+  equipmentName         String
+  parameterMeasured     String
+  traceabilityStandard  String?
+  calibrationInterval   String?
+  calibrationAgencyType String   @default("NABL_ACCREDITED_CAL_LAB")
+  source                String?
+  notes                 String?  @db.Text
+  rank                  Int      @default(1)
+  createdAt             DateTime @default(now())
+
+  analysis ProductTestingAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  @@index([analysisId])
+  @@map("product_calibration_requirements")
+}
+
+model ProductExternalLabRequirement {
+  id              String                     @id @default(uuid()) @db.Uuid
+  analysisId      String                     @db.Uuid
+  schemeId        String?                    @db.Uuid
+  requirementType ExternalLabRequirementType @default(EXTERNAL_LAB_REQUIRED)
+  reason          String                     @db.Text
+  sampleSize      String?
+  testingDuration String?
+  source          String?
+  notes           String?                    @db.Text
+  rank            Int                        @default(1)
+  createdAt       DateTime                   @default(now())
+
+  analysis ProductTestingAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  scheme   Scheme?                @relation(fields: [schemeId], references: [id], onDelete: SetNull)
+
+  @@index([analysisId])
+  @@index([schemeId])
+  @@map("product_external_lab_requirements")
+}
+
+model LaboratoryCapability {
+  id                  String                 @id @default(uuid()) @db.Uuid
+  laboratoryId        String                 @db.Uuid
+  standardId          String?                @db.Uuid
+  testName            String?
+  testMethod          String?
+  scopeDescription    String?                @db.Text
+  accreditationStatus LabAccreditationStatus @default(UNKNOWN)
+  recognitionStatus   LabRecognitionStatus   @default(UNKNOWN)
+  sourceDocumentId    String?                @db.Uuid
+  sourceUrl           String?
+  authorityLevel      AuthorityLevel         @default(AUTHORITATIVE)
+  verifiedAt          DateTime?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  laboratory     Laboratory      @relation(fields: [laboratoryId], references: [id], onDelete: Cascade)
+  standard       Standard?       @relation(fields: [standardId], references: [id], onDelete: SetNull)
+  sourceDocument SourceDocument? @relation(fields: [sourceDocumentId], references: [id])
+
+  @@index([laboratoryId])
+  @@index([standardId])
+  @@index([accreditationStatus])
+  @@index([recognitionStatus])
+  @@map("laboratory_capabilities")
+}
+
+model ProductLaboratoryReview {
+  id           String      @id @default(uuid()) @db.Uuid
+  productId    String      @db.Uuid
+  laboratoryId String      @db.Uuid
+  userId       String      @db.Uuid
+  decision     LabDecision @default(SHORTLISTED)
+  note         String?     @db.Text
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  laboratory Laboratory @relation(fields: [laboratoryId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, laboratoryId])
+  @@index([productId])
+  @@index([laboratoryId])
+  @@index([userId])
+  @@map("product_laboratory_reviews")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Phase 10 — Compliance Automation & Journey Orchestration Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ComplianceJourneyStatus {
+  DRAFT
+  PRODUCT_IDENTIFIED
+  INFORMATION_COLLECTION
+  DOCUMENT_COLLECTION
+  ANALYSIS
+  STANDARD_IDENTIFICATION
+  CERTIFICATION_ANALYSIS
+  TESTING_ANALYSIS
+  LAB_SELECTION
+  DOCUMENT_VERIFICATION
+  READY_FOR_OFFICIAL_ACTION
+  OFFICIAL_ACTION
+  COMPLIANCE_TRACKING
+  COMPLETED
+  BLOCKED
+  ARCHIVED
+}
+
+enum ComplianceRequirementType {
+  STANDARD
+  CERTIFICATION
+  TEST
+  DOCUMENT
+  LABORATORY
+  APPLICATION
+  FACTORY
+  QUALITY_CONTROL
+  MARKING
+  QCO
+  OTHER
+}
+
+enum ComplianceRequirementStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  NEEDS_REVIEW
+  BLOCKED
+  COMPLETED
+  WAIVED
+  NOT_APPLICABLE
+}
+
+enum MandatoryStatus {
+  MANDATORY
+  RECOMMENDED
+  OPTIONAL
+  CONDITIONAL
+}
+
+enum RequirementPriority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum ComplianceTaskType {
+  UPLOAD_DOCUMENT
+  VERIFY_DOCUMENT
+  COMPLETE_PRODUCT_INFO
+  REVIEW_STANDARD
+  REVIEW_CERTIFICATION
+  COMPLETE_TEST
+  SELECT_LAB
+  VERIFY_TEST_REPORT
+  COMPLETE_APPLICATION
+  REVIEW_QCO
+  REVIEW_GAZETTE
+  OTHER
+}
+
+enum ComplianceTaskStatus {
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  COMPLETED
+  SKIPPED
+  CANCELLED
+}
+
+enum AutomationRunType {
+  INITIALIZE
+  RECALCULATE
+  DOCUMENT_UPDATE
+  TESTING_UPDATE
+  CERTIFICATION_UPDATE
+  QCO_UPDATE
+  GAZETTE_UPDATE
+  MANUAL_REFRESH
+}
+
+enum ApplicationDossierStatus {
+  DRAFT
+  INCOMPLETE
+  READY_FOR_REVIEW
+  READY_FOR_OFFICIAL_ACTION
+  ARCHIVED
+}
+
+enum DossierItemStatus {
+  MISSING
+  PRESENT
+  NEEDS_REVIEW
+  VERIFIED
+  NOT_APPLICABLE
+}
+
+enum RegulatoryChangeType {
+  QCO_NEW
+  QCO_UPDATED
+  QCO_REPLACED
+  QCO_REVOKED
+  STANDARD_AMENDED
+  STANDARD_REVISED
+  GAZETTE_UPDATED
+  OTHER
+}
+
+enum RegulatoryImpactLevel {
+  NO_IMPACT
+  LOW
+  MEDIUM
+  HIGH
+  NEEDS_REVIEW
+}
+
+enum ComplianceAlertType {
+  DOCUMENT_EXPIRING
+  DOCUMENT_MISSING
+  TEST_MISSING
+  REVIEW_REQUIRED
+  QCO_CHANGE
+  STANDARD_AMENDMENT
+  JOURNEY_BLOCKED
+  DOSSIER_INCOMPLETE
+  OTHER
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Phase 10 — Compliance Automation & Journey Orchestration Models
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ComplianceJourney {
+  id              String                  @id @default(uuid()) @db.Uuid
+  productId       String                  @db.Uuid
+  status          ComplianceJourneyStatus @default(DRAFT)
+  journeyVersion  String                  @default("1.0.0")
+  inputHash       String
+  readinessScore  Float                   @default(0)
+  readinessStatus String                  @default("IN_PROGRESS")
+  currentStage    ComplianceWorkflowStage @default(DRAFT)
+  summary         String?                 @db.Text
+  startedAt       DateTime                @default(now())
+  completedAt     DateTime?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  product         Product                  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  requirements    ComplianceRequirement[]
+  tasks           ComplianceTask[]
+  automationRuns  ComplianceAutomationRun[]
+  dossiers        ApplicationDossier[]
+  alerts          ComplianceAlert[]
+  impacts         RegulatoryImpact[]
+
+  @@index([productId])
+  @@index([status])
+  @@index([inputHash])
+  @@map("compliance_journeys")
+}
+
+model ComplianceRequirement {
+  id               String                      @id @default(uuid()) @db.Uuid
+  journeyId        String                      @db.Uuid
+  standardId       String?                     @db.Uuid
+  requirementType  ComplianceRequirementType   @default(STANDARD)
+  sourceEntityType String                      @default("Standard")
+  sourceEntityId   String?
+  title            String
+  description      String?                     @db.Text
+  mandatoryStatus  MandatoryStatus             @default(MANDATORY)
+  priority         RequirementPriority         @default(HIGH)
+  status           ComplianceRequirementStatus @default(NOT_STARTED)
+  evidenceRequired Boolean                     @default(true)
+  sourceDocumentId String?                     @db.Uuid
+  sourceUrl        String?
+  sourceAuthority  AuthorityLevel              @default(AUTHORITATIVE)
+  evidence         Json?
+  waivedReason     String?                     @db.Text
+  waivedByUserId   String?                     @db.Uuid
+  waivedAt         DateTime?
+  createdAt        DateTime                    @default(now())
+  updatedAt        DateTime                    @updatedAt
+
+  journey          ComplianceJourney                 @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  standard         Standard?                         @relation(fields: [standardId], references: [id], onDelete: SetNull)
+  sourceDocument   SourceDocument?                   @relation(fields: [sourceDocumentId], references: [id], onDelete: SetNull)
+  tasks            ComplianceTask[]
+  dossierItems     ApplicationDossierItem[]
+  dependencies     ComplianceRequirementDependency[] @relation("RequirementDependencies")
+  dependedBy       ComplianceRequirementDependency[] @relation("PrerequisiteRequirements")
+
+  @@index([journeyId])
+  @@index([standardId])
+  @@index([requirementType])
+  @@index([status])
+  @@index([mandatoryStatus])
+  @@map("compliance_requirements")
+}
+
+model ComplianceRequirementDependency {
+  id                         String   @id @default(uuid()) @db.Uuid
+  requirementId              String   @db.Uuid
+  prerequisiteRequirementId  String   @db.Uuid
+  dependencyType             String   @default("BLOCKS")
+  createdAt                  DateTime @default(now())
+
+  requirement                ComplianceRequirement @relation("RequirementDependencies", fields: [requirementId], references: [id], onDelete: Cascade)
+  prerequisiteRequirement    ComplianceRequirement @relation("PrerequisiteRequirements", fields: [prerequisiteRequirementId], references: [id], onDelete: Cascade)
+
+  @@unique([requirementId, prerequisiteRequirementId])
+  @@index([requirementId])
+  @@index([prerequisiteRequirementId])
+  @@map("compliance_requirement_dependencies")
+}
+
+model ComplianceTask {
+  id               String               @id @default(uuid()) @db.Uuid
+  journeyId        String               @db.Uuid
+  requirementId    String?              @db.Uuid
+  title            String
+  description      String?              @db.Text
+  taskType         ComplianceTaskType   @default(OTHER)
+  status           ComplianceTaskStatus @default(TODO)
+  priority         RequirementPriority  @default(HIGH)
+  assignedToUserId String?              @db.Uuid
+  dueDate          DateTime?
+  completedAt      DateTime?
+  blockerReason    String?              @db.Text
+  sourceEvidence   Json?
+  taskOrder        Int                  @default(1)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  journey          ComplianceJourney      @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  requirement      ComplianceRequirement? @relation(fields: [requirementId], references: [id], onDelete: SetNull)
+  assignedToUser   User?                  @relation(fields: [assignedToUserId], references: [id], onDelete: SetNull)
+
+  @@index([journeyId])
+  @@index([requirementId])
+  @@index([status])
+  @@index([taskType])
+  @@index([assignedToUserId])
+  @@map("compliance_tasks")
+}
+
+model ComplianceAutomationRun {
+  id              String            @id @default(uuid()) @db.Uuid
+  journeyId       String            @db.Uuid
+  runType         AutomationRunType @default(INITIALIZE)
+  inputHash       String
+  engineVersion   String            @default("1.0.0")
+  status          String            @default("COMPLETED")
+  changesDetected Json?
+  executionTimeMs Int?
+  createdAt       DateTime          @default(now())
+  completedAt     DateTime?
+
+  journey         ComplianceJourney @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+
+  @@index([journeyId])
+  @@index([inputHash])
+  @@map("compliance_automation_runs")
+}
+
+model ApplicationDossier {
+  id                String                   @id @default(uuid()) @db.Uuid
+  journeyId         String                   @db.Uuid
+  productId         String                   @db.Uuid
+  version           Int                      @default(1)
+  status            ApplicationDossierStatus @default(DRAFT)
+  title             String
+  summary           String?                  @db.Text
+  completenessScore Float                    @default(0)
+  missingCount      Int                      @default(0)
+  unverifiedCount   Int                      @default(0)
+  verifiedCount     Int                      @default(0)
+  validatedAt       DateTime?
+  exportedAt        DateTime?
+  metadata          Json?                    @default("{}")
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+
+  journey           ComplianceJourney        @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  product           Product                  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  items             ApplicationDossierItem[]
+
+  @@index([journeyId])
+  @@index([productId])
+  @@index([status])
+  @@map("application_dossiers")
+}
+
+model ApplicationDossierItem {
+  id                 String                     @id @default(uuid()) @db.Uuid
+  dossierId          String                     @db.Uuid
+  requirementId      String?                    @db.Uuid
+  itemType           String
+  title              String
+  description        String?                    @db.Text
+  sourceType         String                     @default("DOCUMENT")
+  sourceEntityId     String?
+  documentId         String?                    @db.Uuid
+  verificationStatus DocumentVerificationStatus @default(UNVERIFIED)
+  required           Boolean                    @default(true)
+  status             DossierItemStatus          @default(MISSING)
+  evidence           Json?
+  itemOrder          Int                        @default(1)
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+
+  dossier            ApplicationDossier         @relation(fields: [dossierId], references: [id], onDelete: Cascade)
+  requirement        ComplianceRequirement?     @relation(fields: [requirementId], references: [id], onDelete: SetNull)
+  document           ProductDocument?           @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@index([dossierId])
+  @@index([requirementId])
+  @@index([documentId])
+  @@index([status])
+  @@map("application_dossier_items")
+}
+
+model RegulatoryChangeEvent {
+  id                        String               @id @default(uuid()) @db.Uuid
+  sourceDocumentId          String?              @db.Uuid
+  changeType                RegulatoryChangeType @default(OTHER)
+  title                     String
+  summary                   String?              @db.Text
+  affectedStandards         Json?                @default("[]")
+  affectedProductCategories Json?                @default("[]")
+  effectiveDate             DateTime?
+  detectedAt                DateTime             @default(now())
+  sourceUrl                 String?
+  authorityLevel            AuthorityLevel       @default(AUTHORITATIVE)
+  status                    String               @default("ACTIVE")
+  createdAt                 DateTime             @default(now())
+  updatedAt                 DateTime             @updatedAt
+
+  sourceDocument            SourceDocument?      @relation(fields: [sourceDocumentId], references: [id], onDelete: SetNull)
+  impacts                   RegulatoryImpact[]
+
+  @@index([sourceDocumentId])
+  @@index([changeType])
+  @@index([status])
+  @@map("regulatory_change_events")
+}
+
+model RegulatoryImpact {
+  id                   String                @id @default(uuid()) @db.Uuid
+  changeEventId        String                @db.Uuid
+  productId            String                @db.Uuid
+  journeyId            String?               @db.Uuid
+  impactLevel          RegulatoryImpactLevel @default(NEEDS_REVIEW)
+  affectedRequirements Json?                 @default("[]")
+  requiredActions      Json?                 @default("[]")
+  evidence             Json?                 @default("{}")
+  status               String                @default("PENDING_REVIEW")
+  createdAt            DateTime              @default(now())
+
+  changeEvent          RegulatoryChangeEvent @relation(fields: [changeEventId], references: [id], onDelete: Cascade)
+  product              Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  journey              ComplianceJourney?    @relation(fields: [journeyId], references: [id], onDelete: SetNull)
+
+  @@unique([changeEventId, productId])
+  @@index([changeEventId])
+  @@index([productId])
+  @@index([journeyId])
+  @@index([impactLevel])
+  @@map("regulatory_impacts")
+}
+
+model ComplianceAlert {
+  id                String              @id @default(uuid()) @db.Uuid
+  productId         String              @db.Uuid
+  journeyId         String?             @db.Uuid
+  alertType         ComplianceAlertType @default(OTHER)
+  priority          RequirementPriority @default(HIGH)
+  title             String
+  reason            String              @db.Text
+  source            String?
+  recommendedAction String?             @db.Text
+  isRead            Boolean             @default(false)
+  isResolved        Boolean             @default(false)
+  readAt            DateTime?
+  resolvedAt        DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  product           Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  journey           ComplianceJourney?  @relation(fields: [journeyId], references: [id], onDelete: SetNull)
+
+  @@index([productId])
+  @@index([journeyId])
+  @@index([alertType])
+  @@index([priority])
+  @@index([isRead])
+  @@index([isResolved])
+  @@map("compliance_alerts")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Phase 11 — Consumer Services & Hallmarking Intelligence Models
+// ─────────────────────────────────────────────────────────────────────────────
+
+model HallmarkingCentre {
+  id               String         @id @default(uuid()) @db.Uuid
+  name             String
+  code             String         @unique
+  address          String         @db.Text
+  city             String
+  state            String
+  pincode          String
+  phone            String?
+  email            String?
+  website          String?
+  latitude         Float?
+  longitude        Float?
+  status           String         @default("ACTIVE")
+  sourceDocumentId String?        @db.Uuid
+  sourceUrl        String?
+  authorityLevel   AuthorityLevel @default(AUTHORITATIVE)
+  isVerified       Boolean        @default(true)
+  lastVerifiedAt   DateTime       @default(now())
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  sourceDocument   SourceDocument? @relation(fields: [sourceDocumentId], references: [id], onDelete: SetNull)
+
+  @@index([state])
+  @@index([city])
+  @@index([pincode])
+  @@index([code])
+  @@index([status])
+  @@map("hallmarking_centres")
+}
+
+model HallmarkVerification {
+  id                        String         @id @default(uuid()) @db.Uuid
+  userId                    String?        @db.Uuid
+  huid                      String
+  enteredDetails            Json?          @default("{}")
+  verificationStatus        String         @default("UNKNOWN")
+  articleType               String?
+  purityPpm                 Int?
+  purityKarat               String?
+  hallmarkingCentreName     String?
+  hallmarkingCentreCode     String?
+  hallmarkingDate           DateTime?
+  jewellerName              String?
+  jewellerRegistrationNumber String?
+  sourceDocumentId          String?        @db.Uuid
+  sourceUrl                 String?
+  sourceAuthority           String?        @default("Bureau of Indian Standards (BIS)")
+  retrievedAt               DateTime       @default(now())
+  evidence                  Json?          @default("{}")
+  createdAt                 DateTime       @default(now())
+
+  user                      User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  sourceDocument            SourceDocument? @relation(fields: [sourceDocumentId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([huid])
+  @@index([verificationStatus])
+  @@map("hallmark_verifications")
+}
+
+model ConsumerService {
+  id                  String         @id @default(uuid()) @db.Uuid
+  serviceType         String         @unique
+  title               String
+  description         String         @db.Text
+  eligibility         String?        @db.Text
+  requiredInformation Json?          @default("[]")
+  officialUrl         String?
+  sourceDocumentId    String?        @db.Uuid
+  sourceAuthority     String         @default("Bureau of Indian Standards (BIS)")
+  status              String         @default("ACTIVE")
+  lastVerifiedAt      DateTime       @default(now())
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  sourceDocument      SourceDocument? @relation(fields: [sourceDocumentId], references: [id], onDelete: SetNull)
+
+  @@index([serviceType])
+  @@map("consumer_services")
+}
+
+model ConsumerVerification {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @db.Uuid
+  verificationType String
+  query            Json
+  resultStatus     String
+  source           String?
+  evidence         Json?    @default("{}")
+  createdAt        DateTime @default(now())
+
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([verificationType])
+  @@index([resultStatus])
+  @@map("consumer_verifications")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Phase 12 — Multilingual & Accessibility Intelligence Models
+// ─────────────────────────────────────────────────────────────────────────────
+
+model UserPreference {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @unique @db.Uuid
+  language      String   @default("en")
+  theme         String?  @default("system")
+  reducedMotion Boolean  @default(false)
+  highContrast  Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}
+
+model TranslationCache {
+  id              String   @id @default(uuid()) @db.Uuid
+  sourceLanguage  String   @default("en")
+  targetLanguage  String
+  sourceTextHash  String
+  sourceText      String   @db.Text
+  translatedText  String   @db.Text
+  preservedTerms  String[] @default([])
+  sourceReference String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([sourceTextHash, targetLanguage])
+  @@index([sourceTextHash])
+  @@index([targetLanguage])
+  @@map("translation_cache")
+}

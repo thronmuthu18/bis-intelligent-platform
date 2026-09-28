@@ -1,0 +1,119 @@
+# ==============================================================================
+# Production Docker Compose Configuration for BIS Intelligent Platform
+# Hardened, Containerized Micro-Services (API + Web Frontend)
+# Note: Production Database is Managed PostgreSQL (e.g. AWS RDS / Supabase)
+# ==============================================================================
+
+version: '3.8'
+
+services:
+  # ───────────────────────────────────────────────────────────────────────────
+  # API Backend Service
+  # ───────────────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: bis-api:latest
+    container_name: bis-api
+    restart: unless-stopped
+    ports:
+      - "${PORT:-5000}:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-7d}
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost}
+      - STORAGE_PROVIDER=${STORAGE_PROVIDER:-local}
+      - STORAGE_BUCKET=${STORAGE_BUCKET:-}
+      - STORAGE_REGION=${STORAGE_REGION:-us-east-1}
+      - STORAGE_ENDPOINT=${STORAGE_ENDPOINT:-}
+      - STORAGE_ACCESS_KEY_ID=${STORAGE_ACCESS_KEY_ID:-}
+      - STORAGE_SECRET_ACCESS_KEY=${STORAGE_SECRET_ACCESS_KEY:-}
+      - STORAGE_FORCE_PATH_STYLE=${STORAGE_FORCE_PATH_STYLE:-false}
+      - AI_PROVIDER=${AI_PROVIDER:-mock}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - VERIFICATION_PROVIDER=${VERIFICATION_PROVIDER:-mock}
+      - TRANSLATION_PROVIDER=${TRANSLATION_PROVIDER:-mock}
+      - JOB_QUEUE_PROVIDER=${JOB_QUEUE_PROVIDER:-memory}
+      - NOTIFICATION_CHANNELS=${NOTIFICATION_CHANNELS:-in_app}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-900000}
+      - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-300}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+      - /app/uploads:rw,noexec,nosuid,size=128m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:' + (process.env.PORT || 5000) + '/api/v1/health/live').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.50'
+          memory: 1024M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    networks:
+      - bis-internal
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Web Frontend Service (SPA + Nginx)
+  # ───────────────────────────────────────────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        - VITE_API_URL=${VITE_API_URL:-/api/v1}
+    image: bis-web:latest
+    container_name: bis-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-80}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+      - /var/run:rw,noexec,nosuid,size=16m
+      - /var/cache/nginx:rw,noexec,nosuid,size=64m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+        reservations:
+          cpus: '0.10'
+          memory: 64M
+    networks:
+      - bis-internal
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dedicated Isolated Internal Bridge Network
+# ─────────────────────────────────────────────────────────────────────────────
+networks:
+  bis-internal:
+    driver: bridge

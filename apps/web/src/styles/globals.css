@@ -1,0 +1,197 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   BIS Intelligent Platform — Global Styles
+   Foundation CSS that complements Tailwind design tokens.
+──────────────────────────────────────────────────────────────────────────── */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base Layer ────────────────────────────────────────────────────────────── */
+@layer base {
+  /* Smooth font rendering */
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Default focus visible — accessible, enterprise style */
+  *:focus-visible {
+    @apply outline-2 outline-offset-2 outline-accent-500;
+  }
+
+  /* Remove default button/input styles */
+  button, input, textarea, select {
+    @apply font-sans;
+  }
+
+  /* Typography base */
+  h1, h2, h3, h4, h5, h6 {
+    @apply text-text-primary font-semibold leading-snug;
+  }
+
+  p {
+    @apply text-text-secondary leading-relaxed;
+  }
+
+  a {
+    @apply text-text-accent hover:underline transition-colors;
+  }
+
+  /* Horizontal rule */
+  hr {
+    @apply border-surface-border;
+  }
+
+  /* Code elements */
+  code {
+    @apply font-mono text-sm bg-surface-muted px-1.5 py-0.5 rounded text-text-primary;
+  }
+}
+
+/* ── Component Layer ─────────────────────────────────────────────────────── */
+@layer components {
+  /* ── Card ── */
+  .card {
+    @apply bg-surface-card rounded-xl border border-surface-border shadow-card;
+  }
+
+  .card-hover {
+    @apply card transition-shadow duration-200 hover:shadow-card-hover;
+  }
+
+  /* ── Button system ── */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg
+           text-sm font-medium transition-all duration-150 cursor-pointer
+           disabled:opacity-50 disabled:cursor-not-allowed
+           focus-visible:outline-2 focus-visible:outline-offset-2;
+  }
+
+  .btn-primary {
+    @apply btn bg-accent-500 text-white
+           hover:bg-accent-600 active:bg-accent-700
+           focus-visible:outline-accent-500;
+  }
+
+  .btn-secondary {
+    @apply btn bg-surface-card text-text-primary border border-surface-border
+           hover:bg-surface-muted active:bg-surface-muted
+           focus-visible:outline-accent-500;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-text-secondary
+           hover:bg-surface-muted hover:text-text-primary
+           focus-visible:outline-accent-500;
+  }
+
+  .btn-danger {
+    @apply btn bg-status-errorBg text-status-error border border-red-200
+           hover:bg-red-100
+           focus-visible:outline-red-500;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+
+  .btn-lg {
+    @apply px-6 py-3 text-base;
+  }
+
+  /* ── Form elements ── */
+  .form-label {
+    @apply block text-sm font-medium text-text-primary mb-1;
+  }
+
+  .form-input {
+    @apply block w-full rounded-lg border border-surface-border bg-white
+           px-3 py-2 text-sm text-text-primary placeholder:text-text-muted
+           shadow-inset-sm
+           transition-colors duration-150
+           focus:outline-none focus:border-accent-500 focus:ring-1 focus:ring-accent-500
+           disabled:bg-surface-muted disabled:cursor-not-allowed;
+  }
+
+  .form-textarea {
+    @apply form-input resize-none;
+  }
+
+  .form-select {
+    @apply form-input pr-8 appearance-none bg-no-repeat bg-right-3;
+  }
+
+  .form-error {
+    @apply text-xs text-status-error mt-1;
+  }
+
+  .form-hint {
+    @apply text-xs text-text-muted mt-1;
+  }
+
+  /* ── Badge ── */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-blue   { @apply badge bg-status-infoBg text-status-info; }
+  .badge-green  { @apply badge bg-status-successBg text-status-success; }
+  .badge-yellow { @apply badge bg-status-warningBg text-status-warning; }
+  .badge-red    { @apply badge bg-status-errorBg text-status-error; }
+  .badge-grey   { @apply badge bg-surface-muted text-text-secondary; }
+
+  /* ── Page layout ── */
+  .page-container {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  .page-header {
+    @apply py-6 border-b border-surface-border;
+  }
+
+  .page-title {
+    @apply text-2xl font-semibold text-text-primary;
+  }
+
+  .page-subtitle {
+    @apply text-sm text-text-secondary mt-1;
+  }
+
+  /* ── Section ── */
+  .section-title {
+    @apply text-base font-semibold text-text-primary mb-4;
+  }
+
+  /* ── Skeleton loading ── */
+  .skeleton {
+    @apply bg-surface-muted rounded animate-pulse;
+  }
+
+  /* ── Divider ── */
+  .divider {
+    @apply border-t border-surface-border my-4;
+  }
+}
+
+/* ── Utilities ───────────────────────────────────────────────────────────── */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #D1D5DB transparent;
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
