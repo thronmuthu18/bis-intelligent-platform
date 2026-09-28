@@ -89,14 +89,20 @@ variable "cors_origin" {
 
 variable "api_image" {
   type        = string
-  description = "Docker image URI for API container (e.g. ECR URI or GHCR)"
-  default     = "ghcr.io/bis/api:staging-latest"
+  description = "Docker image URI for API container (e.g. ECR URI)"
+  default     = "758808001260.dkr.ecr.ap-south-1.amazonaws.com/bis-staging-api:latest"
 }
 
 variable "web_image" {
   type        = string
-  description = "Docker image URI for Web container (e.g. ECR URI or GHCR)"
-  default     = "ghcr.io/bis/web:staging-latest"
+  description = "Docker image URI for Web container (e.g. ECR URI)"
+  default     = "758808001260.dkr.ecr.ap-south-1.amazonaws.com/bis-staging-web:latest"
+}
+
+variable "github_repo" {
+  type        = string
+  description = "GitHub repository (owner/repo) allowed to assume deployment role via OIDC"
+  default     = "thronmuthu18/bis-intelligent-platform"
 }
 
 variable "container_cpu_api" {

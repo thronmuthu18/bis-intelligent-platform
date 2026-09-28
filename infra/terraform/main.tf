@@ -46,3 +46,5 @@ resource "random_string" "suffix" {
   special = false
   upper   = false
 }
+
+data "aws_caller_identity" "current" {}

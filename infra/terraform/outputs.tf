@@ -51,3 +51,8 @@ output "secrets_manager_secret_arn" {
   description = "ARN of the AWS Secrets Manager secret storing application credentials"
   value       = aws_secretsmanager_secret.app_secrets.arn
 }
+
+output "github_actions_role_arn" {
+  description = "ARN of the IAM role assumed by GitHub Actions via OIDC"
+  value       = aws_iam_role.github_actions.arn
+}

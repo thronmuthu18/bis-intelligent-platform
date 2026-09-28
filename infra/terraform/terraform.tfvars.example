@@ -22,8 +22,8 @@ jwt_secret  = "CHANGE_ME_TO_A_STRONG_CRYPTOGRAPHIC_JWT_SECRET_KEY_MIN_32_CHARS!!
 cors_origin = "https://staging.bis-intelligent.gov.in"
 
 # Container images
-api_image = "ghcr.io/bis/api:staging-latest"
-web_image = "ghcr.io/bis/web:staging-latest"
+api_image = "758808001260.dkr.ecr.ap-south-1.amazonaws.com/bis-staging-api:latest"
+web_image = "758808001260.dkr.ecr.ap-south-1.amazonaws.com/bis-staging-web:latest"
 
 # Fargate sizing
 container_cpu_api    = 512
