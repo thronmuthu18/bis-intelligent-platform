@@ -2,13 +2,14 @@ name: Staging Deployment Pipeline
 
 # ==============================================================================
 # Staging Deployment Pipeline — BIS Intelligent Platform
-# Trigger: Manual Dispatch (workflow_dispatch) or Push to 'main' branch
+# Trigger: Manual Dispatch (workflow_dispatch) only
 # Target: AWS Staging Infrastructure (ap-south-1 / Account 758808001260)
 # Authentication: GitHub OIDC Role Assumption (Zero Static AWS Access Keys)
 # Container Registry: Amazon Elastic Container Registry (ECR)
 # Orchestration: Amazon Elastic Container Service (ECS Fargate)
 # Database Migrations: One-off ECS Task inside Private VPC (Isolated RDS)
 # ==============================================================================
+# Staging deployment is temporarily paused because ECS service stabilization is under investigation. AWS infrastructure is intentionally preserved.
 
 on:
   workflow_dispatch:
@@ -38,9 +39,6 @@ on:
         required: true
         default: 'CONFIRM'
         type: string
-  push:
-    branches:
-      - main
 
 concurrency:
   group: staging-deployment
