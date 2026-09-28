@@ -18,7 +18,7 @@ export const INSECURE_DEV_JWT_SECRETS = [
 export const envSchema = z
   .object({
     // Application
-    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    NODE_ENV: z.enum(['development', 'test', 'staging', 'production']).default('development'),
     PORT: z.coerce.number().int().positive().default(5000),
 
     // Database — required for any real functionality
@@ -73,20 +73,21 @@ export const envSchema = z
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   })
   .superRefine((data, ctx) => {
-    // ── Production-Only Strict Validations ────────────────────────────────────
-    if (data.NODE_ENV === 'production') {
+    // ── Production & Staging Strict Validations ───────────────────────────────
+    const isProductionGrade = data.NODE_ENV === 'production' || data.NODE_ENV === 'staging';
+    if (isProductionGrade) {
       // 1. JWT Secret requirement
       if (!data.JWT_SECRET) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['JWT_SECRET'],
-          message: 'JWT_SECRET is required in production and must be at least 32 characters.',
+          message: 'JWT_SECRET is required in production and staging environments and must be at least 32 characters.',
         });
       } else if (INSECURE_DEV_JWT_SECRETS.includes(data.JWT_SECRET)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['JWT_SECRET'],
-          message: 'Insecure default development JWT_SECRET cannot be used in production.',
+          message: 'Insecure default development JWT_SECRET cannot be used in production or staging.',
         });
       }
 
@@ -99,26 +100,37 @@ export const envSchema = z
             message: 'STORAGE_BUCKET is required when STORAGE_PROVIDER is "s3".',
           });
         }
-        if (!data.STORAGE_ACCESS_KEY || data.STORAGE_ACCESS_KEY.trim() === '') {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['STORAGE_ACCESS_KEY'],
-            message: 'STORAGE_ACCESS_KEY is required when STORAGE_PROVIDER is "s3".',
-          });
-        }
-        if (!data.STORAGE_SECRET_KEY || data.STORAGE_SECRET_KEY.trim() === '') {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['STORAGE_SECRET_KEY'],
-            message: 'STORAGE_SECRET_KEY is required when STORAGE_PROVIDER is "s3".',
-          });
-        }
         if (!data.STORAGE_REGION || data.STORAGE_REGION.trim() === '') {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             path: ['STORAGE_REGION'],
             message: 'STORAGE_REGION is required when STORAGE_PROVIDER is "s3".',
           });
+        }
+
+        // When running under AWS ECS Fargate with an IAM task role, container metadata/credentials
+        // are injected automatically by the ECS runtime (no static access keys required).
+        const isAwsIamEnvironment = Boolean(
+          process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI ||
+          process.env.AWS_EXECUTION_ENV ||
+          process.env.ECS_CONTAINER_METADATA_URI_V4
+        );
+
+        if (!isAwsIamEnvironment) {
+          if (!data.STORAGE_ACCESS_KEY || data.STORAGE_ACCESS_KEY.trim() === '') {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['STORAGE_ACCESS_KEY'],
+              message: 'STORAGE_ACCESS_KEY is required when STORAGE_PROVIDER is "s3".',
+            });
+          }
+          if (!data.STORAGE_SECRET_KEY || data.STORAGE_SECRET_KEY.trim() === '') {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['STORAGE_SECRET_KEY'],
+              message: 'STORAGE_SECRET_KEY is required when STORAGE_PROVIDER is "s3".',
+            });
+          }
         }
       }
 

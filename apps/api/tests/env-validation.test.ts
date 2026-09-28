@@ -42,6 +42,17 @@ describe('Production Environment Validation', () => {
       expect(res.success).toBe(true);
     });
 
+    it('should pass in staging mode with valid secure configuration', () => {
+      const res = validateEnv({
+        ...baseValidProdEnv,
+        NODE_ENV: 'staging',
+      });
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.data.NODE_ENV).toBe('staging');
+      }
+    });
+
     it('should reject missing JWT_SECRET in production mode', () => {
       const { JWT_SECRET, ...envWithoutJwt } = baseValidProdEnv;
       const res = validateEnv(envWithoutJwt);
