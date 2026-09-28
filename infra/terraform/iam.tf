@@ -139,8 +139,12 @@ data "aws_iam_policy_document" "github_actions_assume_role" {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
       values = [
+        "repo:${var.github_repo}:environment:staging",
+        "repo:thronmuthu18@219131024/bis-intelligent-platform@1392951318:environment:staging",
         "repo:${var.github_repo}:ref:refs/heads/main",
-        "repo:${var.github_repo}:environment:staging"
+        "repo:thronmuthu18@219131024/bis-intelligent-platform@1392951318:ref:refs/heads/main",
+        "repo:thronmuthu18*/bis-intelligent-platform*:environment:staging",
+        "repo:thronmuthu18*/bis-intelligent-platform*:ref:refs/heads/main"
       ]
     }
   }
