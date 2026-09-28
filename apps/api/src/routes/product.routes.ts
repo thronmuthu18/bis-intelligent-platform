@@ -29,6 +29,7 @@ import {
   documentUploadMiddleware,
 } from '../controllers/document.controller.js';
 import { complianceController } from '../controllers/compliance.controller.js';
+import { AssistantController } from '../controllers/assistant.controller.js';
 import { requireAuth } from '../middleware/auth.middleware.js';
 import { uploadRateLimiter } from '../middleware/rateLimiter.js';
 
@@ -99,6 +100,13 @@ productRouter.post('/:id/compliance/dossier/validate', complianceController.vali
 productRouter.get('/:id/compliance/alerts', complianceController.getAlerts.bind(complianceController));
 productRouter.post('/:id/compliance/alerts/:alertId/read', complianceController.markAlertRead.bind(complianceController));
 productRouter.get('/:id/compliance/regulatory-impact', complianceController.getRegulatoryImpact.bind(complianceController));
+
+// Phase 16 Product AI Assistant & Product Activity
+productRouter.get('/:id/assistant/conversations', AssistantController.getProductConversations);
+productRouter.post('/:id/assistant/conversations', AssistantController.createProductConversation);
+productRouter.get('/:id/assistant/conversations/:conversationId', AssistantController.getConversationDetails);
+productRouter.post('/:id/assistant/conversations/:conversationId/messages', AssistantController.sendAssistantMessage);
+productRouter.get('/:id/activity', AssistantController.getProductActivity);
 
 export { productRouter };
 

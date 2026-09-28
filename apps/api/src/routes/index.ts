@@ -7,6 +7,7 @@ import { knowledgeRouter } from './knowledge.routes.js';
 import consumerRouter from './consumer.routes.js';
 import i18nRouter from './i18n.routes.js';
 import adminRouter from './admin.routes.js';
+import { activityRouter } from './activity.routes.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  v1 API Router
@@ -22,5 +23,6 @@ v1Router.use('/knowledge', knowledgeRouter);
 v1Router.use('/consumer', consumerRouter);
 v1Router.use('/i18n', i18nRouter);
 v1Router.use('/admin', adminRouter);
+v1Router.use('/activity', activityRouter);
 
 export { v1Router };

@@ -14,5 +14,6 @@ export * from './types/testing.js';
 export * from './types/consumer.js';
 export * from './types/i18n.js';
 export * from './types/admin.js';
+export * from './types/assistant.js';
 export * from './constants/index.js';
 export * from './constants/terminology.js';
