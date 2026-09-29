@@ -254,11 +254,12 @@ export function DashboardPage(): React.ReactElement {
               i
             </div>
             <div className="text-xs text-text-secondary">
-              <span className="font-semibold text-text-primary">Compliance Architecture Notice:</span>{' '}
-              All product data is stored securely in PostgreSQL with owner-isolated access controls. Official Indian Standard (IS) catalog matching and laboratory discovery will be connected in Phase 4 and Phase 5.
+              <span className="font-semibold text-text-primary">Compliance Architecture:</span>{' '}
+              All product data is stored securely in PostgreSQL with owner-isolated access controls. Intelligent Indian Standard (IS) catalog matching, certification analysis, laboratory discovery, and grounded AI assistant capabilities are active.
             </div>
           </div>
         </div>
+
 
         {/* Quick Portals & Service Links (1 column on lg) */}
         <div className="space-y-6">

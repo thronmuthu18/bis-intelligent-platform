@@ -375,9 +375,10 @@ export function ProductOverviewPage(): React.ReactElement {
       <div className="p-3.5 bg-surface-muted/50 rounded-xl border border-surface-border flex items-start gap-3 text-xs text-text-secondary">
         <Info size={16} className="text-accent-500 shrink-0 mt-0.5" />
         <span>
-          <strong>Product Workspace Status:</strong> This workspace maintains the persistent product record in PostgreSQL. In later phases, standards discovery, document analysis, and AI assistant capabilities will populate these modules.
+          <strong>Product Workspace Status:</strong> This workspace maintains the persistent product record in PostgreSQL. Standards discovery, document analysis, certification intelligence, and AI assistant capabilities are active.
         </span>
       </div>
+
 
       {/* ── Edit Product Modal ── */}
       <Modal
