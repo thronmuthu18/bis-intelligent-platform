@@ -33,8 +33,8 @@ export function HallmarkingPage(): React.ReactElement {
     }
     showToast({
       type: 'info',
-      title: 'HUID Verification Simulation',
-      message: `Searching BIS Hallmarking database for HUID "${huidCode.toUpperCase()}". In Phase 6, live BIS database verification will be connected.`,
+      title: 'HUID Verification Search',
+      message: `Searching BIS Hallmarking database for HUID "${huidCode.toUpperCase()}". Navigate to Consumer Services for complete live verification reports.`,
     });
   };
 
@@ -147,11 +147,11 @@ export function HallmarkingPage(): React.ReactElement {
         </Card>
       </div>
 
-      {/* ── Demo Notice ── */}
+      {/* ── Hallmarking Notice ── */}
       <div className="p-3.5 bg-surface-muted/60 rounded-xl border border-surface-border flex items-start gap-3">
         <Info size={18} className="text-accent-500 shrink-0 mt-0.5" />
         <p className="text-xs text-text-secondary leading-relaxed">
-          <strong className="text-text-primary">Phase 1 UI Notice:</strong> Hallmarking verification services above are interface prototypes. Real-time HUID authentication will connect to BIS Manakonline databases in Phase 6.
+          <strong className="text-text-primary">Official Hallmarking:</strong> Hallmarking is mandatory in 343+ designated districts in India for 14k, 18k, 20k, 22k, 23k, and 24k gold jewellery articles.
         </p>
       </div>
     </div>

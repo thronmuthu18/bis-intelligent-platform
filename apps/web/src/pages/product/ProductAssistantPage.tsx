@@ -23,7 +23,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 
 import { useProduct } from '@/contexts/ProductContext';
-import { assistantService } from '@/services/api';
+import { assistantService } from '@/services/api/assistant.service';
 import type {
   AssistantConversation,
   AssistantMessage,
@@ -68,61 +68,44 @@ export function ProductAssistantPage(): React.ReactElement {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  //  Scroll to bottom of message stream
-  // ─────────────────────────────────────────────────────────────────────────────
   const scrollToBottom = useCallback((smooth = true) => {
-    if (typeof messagesEndRef.current?.scrollIntoView === 'function') {
+    if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
     }
   }, []);
 
-
   // ─────────────────────────────────────────────────────────────────────────────
-  //  Fetch conversations list
+  //  Data Fetching
   // ─────────────────────────────────────────────────────────────────────────────
-  const loadConversations = useCallback(
-    async (selectLatest = false) => {
-      if (!product?.id) return;
-      try {
-        setIsLoadingConversations(true);
-        setErrorMessage(null);
-        const data = await assistantService.getConversations(product.id);
-        setConversations(data);
-
-        if (data.length > 0) {
-          if (selectLatest || !activeConversationId) {
-            setActiveConversationId(data[0].id);
-          }
-        } else {
-          setActiveConversationId(null);
-          setActiveConversation(null);
-          setMessages([]);
-        }
-      } catch (err: any) {
-        const status = err?.statusCode;
-        if (status === 401 || status === 403) {
-          setErrorMessage('Your access to this product has expired or is unavailable.');
-        } else if (err?.message && !err.message.includes('Internal server error')) {
-          setErrorMessage(err.message);
-        } else {
-          setErrorMessage('Assistant is temporarily unavailable. Please try again.');
-        }
-      } finally {
-        setIsLoadingConversations(false);
+  const loadConversations = useCallback(async () => {
+    if (!product?.id) return;
+    try {
+      setIsLoadingConversations(true);
+      setErrorMessage(null);
+      const data = await assistantService.getConversations(product.id);
+      const convList = Array.isArray(data) ? data.filter(Boolean) : [];
+      setConversations(convList);
+      if (convList.length > 0 && !activeConversationId) {
+        setActiveConversationId(convList[0].id);
       }
-    },
-    [product?.id, activeConversationId]
-  );
-
+    } catch (err: any) {
+      const status = err?.statusCode;
+      if (status === 401 || status === 403) {
+        setErrorMessage('Your access to this product has expired or is unavailable.');
+      } else {
+        setErrorMessage('Assistant is temporarily unavailable. Please try again.');
+      }
+    } finally {
+      setIsLoadingConversations(false);
+    }
+  }, [product?.id, activeConversationId]);
 
   useEffect(() => {
-    loadConversations();
-  }, [product?.id]);
+    if (product?.id) {
+      loadConversations();
+    }
+  }, [product?.id, loadConversations]);
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  //  Load selected conversation details & messages
-  // ─────────────────────────────────────────────────────────────────────────────
   const loadActiveConversation = useCallback(async () => {
     if (!product?.id || !activeConversationId) return;
     try {

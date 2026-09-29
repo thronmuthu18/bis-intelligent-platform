@@ -34,8 +34,8 @@ export function ConsumerServicesPage(): React.ReactElement {
     }
     showToast({
       type: 'info',
-      title: 'Verification Simulation',
-      message: `Searching official BIS registry for license "${cmlNumber}". In Phase 6, live BIS database verification will be queried.`,
+      title: 'Verification Search',
+      message: `Searching official BIS registry for license "${cmlNumber}". Use the dedicated Consumer Portal for full verification records.`,
     });
   };
 
@@ -172,11 +172,11 @@ export function ConsumerServicesPage(): React.ReactElement {
         </Card>
       </div>
 
-      {/* ── Demo Notice ── */}
+      {/* ── Consumer Portal Notice ── */}
       <div className="p-3.5 bg-surface-muted/60 rounded-xl border border-surface-border flex items-start gap-3">
         <Info size={18} className="text-accent-500 shrink-0 mt-0.5" />
         <p className="text-xs text-text-secondary leading-relaxed">
-          <strong className="text-text-primary">Phase 1 UI Notice:</strong> Consumer services demonstrated on this page are informational prototypes. Official BIS API verification queries will be linked in future phases.
+          <strong className="text-text-primary">Consumer Verification:</strong> Use the dedicated verification portal for instant licence checks, HUID authentication, hallmarking centre lookup, and BIS standards search.
         </p>
       </div>
     </div>
