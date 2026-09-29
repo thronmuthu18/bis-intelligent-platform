@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "CommonJS",
-    "moduleResolution": "node",
+    "rootDir": "../..",
     "lib": ["ES2022"],
     "strict": true,
     "noUnusedLocals": true,
