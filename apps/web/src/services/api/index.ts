@@ -15,3 +15,6 @@ export { complianceService } from './compliance.service';
 export { consumerService } from './consumer.service';
 export { i18nService } from './i18n.service';
 export { adminService } from './admin.service';
+export { assistantService } from './assistant.service';
+export type { AssistantConversationsResponse, AssistantConversationResponse } from './assistant.service';
+
