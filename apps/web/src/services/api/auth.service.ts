@@ -8,6 +8,7 @@ import type { UserPublicProfile, LoginInput, CreateUserInput } from '@bis/shared
 
 export interface AuthUserData {
   user: UserPublicProfile;
+  token?: string;
 }
 
 export const authService = {

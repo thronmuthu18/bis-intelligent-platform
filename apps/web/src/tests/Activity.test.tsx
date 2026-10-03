@@ -90,7 +90,7 @@ describe('Phase 16.4 — Frontend Activity & Audit Feed Tests', () => {
     renderActivityPage();
 
     expect(await screen.findByText('Activity & Audit Log')).toBeDefined();
-    expect(screen.getByText('Product Created')).toBeDefined();
+    expect(await screen.findByText('Product Created')).toBeDefined();
     expect(screen.getByText('Electric Storage Geyser registered in compliance workspace.')).toBeDefined();
     expect(screen.getByText('AI Assistant Query')).toBeDefined();
     expect(screen.getByText('Compliance query evaluated against IS 302.')).toBeDefined();

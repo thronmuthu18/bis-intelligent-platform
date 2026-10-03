@@ -36,7 +36,7 @@ services:
         value: https://bis-intelligent-platform.vercel.app
 
       - key: API_BASE_URL
-        value: https://bis-api.onrender.com/api/v1
+        value: https://bis-intelligent-platform-api.onrender.com/api/v1
 
       - key: AI_PROVIDER
         value: mock

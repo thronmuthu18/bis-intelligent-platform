@@ -31,17 +31,48 @@ interface RequestOptions {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Token Management (to be expanded in Phase 1 — Auth)
+//  Token Management & Browser Refresh Persistence
 // ─────────────────────────────────────────────────────────────────────────────
 
-let accessToken: string | null = null;
+const AUTH_TOKEN_KEY = 'bis_auth_token';
+
+function getPersistedToken(): string | null {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      return localStorage.getItem(AUTH_TOKEN_KEY);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+let accessToken: string | null = getPersistedToken();
 
 export function setAccessToken(token: string | null): void {
   accessToken = token;
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      if (token) {
+        localStorage.setItem(AUTH_TOKEN_KEY, token);
+      } else {
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+      }
+    } catch {
+      // LocalStorage access might fail under restricted sandbox/privacy modes
+    }
+  }
 }
 
 export function clearAccessToken(): void {
-  accessToken = null;
+  setAccessToken(null);
+}
+
+export function getAccessToken(): string | null {
+  if (!accessToken) {
+    accessToken = getPersistedToken();
+  }
+  return accessToken;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,14 +84,20 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   const url = `${config.apiBaseUrl}${path}`;
 
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+
   const requestHeaders: Record<string, string> = {
-    'Content-Type': 'application/json',
     Accept: 'application/json',
     ...headers,
   };
 
-  if (accessToken) {
-    requestHeaders['Authorization'] = `Bearer ${accessToken}`;
+  if (!isFormData) {
+    requestHeaders['Content-Type'] = 'application/json';
+  }
+
+  const token = getAccessToken();
+  if (token) {
+    requestHeaders['Authorization'] = `Bearer ${token}`;
   }
 
   let response: Response;
@@ -69,7 +106,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     response = await fetch(url, {
       method,
       headers: requestHeaders,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: isFormData ? (body as FormData) : body !== undefined ? JSON.stringify(body) : undefined,
       signal,
       credentials: 'include',
     });

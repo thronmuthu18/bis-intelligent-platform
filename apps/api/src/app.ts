@@ -79,9 +79,30 @@ app.use((_req, res, next) => {
 });
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
+const configuredFrontend = env.FRONTEND_URL.replace(/\/+$/, '');
+
 app.use(
   cors({
-    origin: env.FRONTEND_URL,
+    origin: (requestOrigin, callback) => {
+      // Allow requests with no origin (e.g. mobile apps, supertest, server-to-server)
+      if (!requestOrigin) {
+        return callback(null, true);
+      }
+      const normalized = requestOrigin.replace(/\/+$/, '');
+      if (
+        normalized === configuredFrontend ||
+        normalized === `${configuredFrontend}/` ||
+        (normalized.endsWith('.vercel.app') && normalized.includes('bis-intelligent-platform')) ||
+        (env.NODE_ENV !== 'production' &&
+          (normalized === 'http://localhost:5173' ||
+            normalized === 'http://localhost:4173' ||
+            normalized === 'http://127.0.0.1:5173' ||
+            normalized === 'http://127.0.0.1:4173'))
+      ) {
+        return callback(null, true);
+      }
+      return callback(null, false);
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],

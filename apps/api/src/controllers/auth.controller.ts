@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db/client.js';
 import { registerUser, loginUser, getUserById } from '../services/auth.service.js';
-import { AUTH_COOKIE_NAME, getAuthCookieOptions } from '../services/session.service.js';
+import { AUTH_COOKIE_NAME, getAuthCookieOptions, createAuthToken } from '../services/session.service.js';
 import { sendSuccess } from '../utils/response.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,7 +66,7 @@ export async function registerHandler(
     // Set secure HTTP-only cookie
     res.cookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions());
 
-    sendSuccess(res, { user }, 201);
+    sendSuccess(res, { user, token }, 201);
   } catch (err) {
     next(err);
   }
@@ -84,7 +84,7 @@ export async function loginHandler(
     // Set secure HTTP-only cookie
     res.cookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions());
 
-    sendSuccess(res, { user }, 200);
+    sendSuccess(res, { user, token }, 200);
   } catch (err) {
     next(err);
   }
@@ -129,7 +129,14 @@ export async function getMeHandler(
     const userId = req.user!.id;
     const user = await getUserById(userId);
 
-    sendSuccess(res, { user }, 200);
+    const token = createAuthToken({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      name: user.name,
+    });
+
+    sendSuccess(res, { user, token }, 200);
   } catch (err) {
     next(err);
   }

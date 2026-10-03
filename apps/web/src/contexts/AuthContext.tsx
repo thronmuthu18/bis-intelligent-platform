@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authService } from '@/services/api/auth.service';
+import { setAccessToken, clearAccessToken } from '@/services/api/client';
 import type { UserPublicProfile, LoginInput, CreateUserInput } from '@bis/shared';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -26,8 +27,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   const refreshUser = useCallback(async (): Promise<void> => {
     try {
       const data = await authService.getMe();
+      if (data.token) {
+        setAccessToken(data.token);
+      }
       setUser(data.user);
     } catch {
+      clearAccessToken();
       setUser(null);
     } finally {
       setIsLoading(false);
@@ -40,12 +45,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
 
   const login = async (input: LoginInput): Promise<UserPublicProfile> => {
     const data = await authService.login(input);
+    if (data.token) {
+      setAccessToken(data.token);
+    }
     setUser(data.user);
     return data.user;
   };
 
   const register = async (input: CreateUserInput): Promise<UserPublicProfile> => {
     const data = await authService.register(input);
+    if (data.token) {
+      setAccessToken(data.token);
+    }
     setUser(data.user);
     return data.user;
   };
@@ -54,6 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     try {
       await authService.logout();
     } finally {
+      clearAccessToken();
       setUser(null);
     }
   };

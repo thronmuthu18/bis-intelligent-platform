@@ -5,7 +5,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const config = {
-  apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000/api/v1',
+  apiBaseUrl: (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000/api/v1').replace(/\/+$/, ''),
   appName: 'BIS Intelligent Platform',
   environment: import.meta.env.MODE,
   isDevelopment: import.meta.env.DEV,

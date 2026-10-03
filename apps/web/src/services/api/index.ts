@@ -1,4 +1,4 @@
-export { apiClient, ApiClientError, setAccessToken, clearAccessToken } from './client';
+export { apiClient, ApiClientError, setAccessToken, clearAccessToken, getAccessToken } from './client';
 export { checkApiHealth } from './health';
 export type { HealthResponse } from './health';
 export { authService } from './auth.service';
