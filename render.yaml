@@ -1,0 +1,68 @@
+﻿# ─────────────────────────────────────────────────────────────────────────────
+#  BIS Intelligent Platform — Render Deployment Configuration
+#  https://render.com/docs/blueprint-spec
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  - type: web
+    name: bis-api
+    runtime: node
+    region: singapore
+
+    # Use the monorepo root so that npm workspaces (packages/*) resolve correctly.
+    rootDir: .
+
+    # Build: shared -> prisma generate -> api compile
+    buildCommand: npm ci && npm run build --workspace=@bis/shared && npm run db:generate --workspace=@bis/api && npm run build:api
+
+    # Start: migrate (production-safe) then boot the server
+    startCommand: npm run db:migrate:deploy --workspace=@bis/api && npm run start:api
+
+    plan: free
+
+    healthCheckPath: /api/v1/health/live
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: PORT
+        value: 10000
+
+      - key: FRONTEND_URL
+        value: https://bis-intelligent-platform.vercel.app
+
+      - key: API_BASE_URL
+        value: https://bis-api.onrender.com/api/v1
+
+      - key: AI_PROVIDER
+        value: mock
+
+      - key: TRANSLATION_PROVIDER
+        value: mock
+
+      - key: VERIFICATION_PROVIDER
+        value: mock
+
+      - key: STORAGE_PROVIDER
+        value: local
+
+      - key: STORAGE_LOCAL_PATH
+        value: ./uploads
+
+      - key: RATE_LIMIT_WINDOW_MS
+        value: 900000
+
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: 200
+
+      - key: LOG_LEVEL
+        value: info
+
+      - key: JWT_ACCESS_EXPIRY
+        value: 15m
+
+      - key: JWT_REFRESH_EXPIRY
+        value: 7d
+
+      # DATABASE_URL and JWT_SECRET must be set in the Render Dashboard.
