@@ -4,6 +4,10 @@
     "module": "CommonJS",
     "rootDir": "../..",
     "lib": ["ES2022"],
+    "typeRoots": [
+      "./node_modules/@types",
+      "../../node_modules/@types"
+    ],
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,

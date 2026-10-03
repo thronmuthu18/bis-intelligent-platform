@@ -73,7 +73,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       signal,
       credentials: 'include',
     });
-  } catch (networkErr) {
+  } catch {
     throw new ApiClientError(
       'Unable to connect to the server. Please check your connection.',
       'NETWORK_ERROR',
