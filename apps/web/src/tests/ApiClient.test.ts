@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { apiClient, ApiClientError } from '../services/api/client';
 import { documentService } from '../services/api/document.service';
+import { assistantService } from '../services/api/assistant.service';
 
 describe('ApiClient & Error Handling Regression Tests', () => {
   const originalFetch = global.fetch;
@@ -183,5 +184,77 @@ describe('ApiClient & Error Handling Regression Tests', () => {
     expect(comp).toBeDefined();
     expect(comp.score).toBe(0);
     expect(comp.status).toBe('MISSING_DOCUMENTS');
+  });
+
+  it('9. assistantService.getConversations correctly unwraps raw array from backend envelope { success: true, data: [...] }', async () => {
+    const mockConversations = [
+      { id: 'conv-1', productId: 'prod-1', title: 'IS 10322 Consultation', messages: [] },
+      { id: 'conv-2', productId: 'prod-1', title: 'QCO Mandate Query', messages: [] },
+    ];
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        success: true,
+        data: mockConversations,
+      }),
+    });
+
+    const convs = await assistantService.getConversations('prod-1');
+    expect(Array.isArray(convs)).toBe(true);
+    expect(convs).toHaveLength(2);
+    expect(convs[0].id).toBe('conv-1');
+    expect(convs[1].id).toBe('conv-2');
+  });
+
+  it('10. assistantService.createConversation correctly unwraps raw conversation object from { success: true, data: { id: ... } }', async () => {
+    const newConv = {
+      id: 'conv-new-99',
+      productId: 'prod-1',
+      title: 'New Compliance Query',
+      messages: [],
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({
+        success: true,
+        data: newConv,
+      }),
+    });
+
+    const result = await assistantService.createConversation('prod-1', { title: 'New Compliance Query' });
+    expect(result).toBeDefined();
+    expect(result.id).toBe('conv-new-99');
+    expect(result.title).toBe('New Compliance Query');
+  });
+
+  it('11. assistantService.getConversation correctly unwraps raw conversation object from { success: true, data: { id: ..., messages: [...] } }', async () => {
+    const fullConv = {
+      id: 'conv-full-1',
+      productId: 'prod-1',
+      title: 'Detailed Consultation',
+      messages: [
+        { id: 'msg-1', role: 'USER', content: 'What IS applies?' },
+        { id: 'msg-2', role: 'ASSISTANT', content: 'IS 10322 applies.', citations: [] },
+      ],
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        success: true,
+        data: fullConv,
+      }),
+    });
+
+    const result = await assistantService.getConversation('prod-1', 'conv-full-1');
+    expect(result).toBeDefined();
+    expect(result.id).toBe('conv-full-1');
+    expect(result.messages).toHaveLength(2);
+    expect(result.messages?.[0].id).toBe('msg-1');
   });
 });

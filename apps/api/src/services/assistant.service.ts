@@ -108,12 +108,11 @@ Please note: Information that cannot be verified against official BIS sources is
     }
 
     const providerType = (process.env.AI_PROVIDER || env.AI_PROVIDER || 'mock').toLowerCase();
-    const openaiApiKey = process.env.OPENAI_API_KEY || env.OPENAI_API_KEY || (providerType === 'openai' ? env.AI_API_KEY : undefined);
+    const openaiApiKey = process.env.OPENAI_API_KEY || (providerType === 'openai' ? process.env.AI_API_KEY : undefined);
     const geminiApiKey =
       process.env.GEMINI_API_KEY ||
-      env.GEMINI_API_KEY ||
       (providerType === 'gemini' || providerType === 'google'
-        ? process.env.AI_API_KEY || env.AI_API_KEY
+        ? process.env.AI_API_KEY
         : undefined);
 
     // If a real AI provider is configured, enforce that the key exists (fail fast, do not silently swallow)
@@ -562,11 +561,11 @@ ${params.query}
 7. NEVER invent or hallucinate any IS numbers, standard titles, clauses, test fees, or regulatory mandates not present in the evidence. If official data is not in the evidence, state clearly that it requires official verification from the BIS portal.`;
 
     const model = process.env.AI_MODEL || env.AI_MODEL || 'gemini-2.5-flash';
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${params.apiKey}`;
+    let activeModel = model;
 
-    let response: Response;
-    try {
-      response = await fetch(url, {
+    const makeRequest = async (m: string) => {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${params.apiKey}`;
+      return fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -582,6 +581,29 @@ ${params.query}
           },
         }),
       });
+    };
+
+    let response: Response;
+    try {
+      response = await makeRequest(activeModel);
+      if (!response.ok && (response.status === 404 || response.status === 503) && activeModel === 'gemini-2.5-flash') {
+        try {
+          const cloned = response.clone();
+          const errPeek = await cloned.text();
+          if (errPeek.includes('gemini-3.8-flash') || errPeek.includes('no longer available') || response.status === 503) {
+            logger.info('Gemini model gemini-2.5-flash retired by Google or unavailable, falling back to gemini-3.8-flash');
+            activeModel = 'gemini-3.8-flash';
+            response = await makeRequest(activeModel);
+            if (!response.ok && response.status === 503) {
+              logger.info('Gemini model gemini-3.8-flash experiencing 503 high demand, falling back to gemini-flash-latest');
+              activeModel = 'gemini-flash-latest';
+              response = await makeRequest(activeModel);
+            }
+          }
+        } catch {
+          // ignore peek error and preserve original response
+        }
+      }
     } catch (networkErr: unknown) {
       const msg = networkErr instanceof Error ? networkErr.message : String(networkErr);
       logger.error('Gemini synthesis network failure', { error: msg });

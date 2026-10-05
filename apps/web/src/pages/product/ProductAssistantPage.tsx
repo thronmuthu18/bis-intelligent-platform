@@ -83,7 +83,9 @@ export function ProductAssistantPage(): React.ReactElement {
       setIsLoadingConversations(true);
       setErrorMessage(null);
       const data = await assistantService.getConversations(product.id);
-      const convList = Array.isArray(data) ? data.filter(Boolean) : [];
+      const convList = Array.isArray(data)
+        ? data.filter((c): c is AssistantConversation => Boolean(c && typeof c === 'object' && c.id))
+        : [];
       setConversations(convList);
       if (convList.length > 0 && !activeConversationId) {
         setActiveConversationId(convList[0].id);
@@ -112,9 +114,14 @@ export function ProductAssistantPage(): React.ReactElement {
       setIsLoadingMessages(true);
       setErrorMessage(null);
       const data = await assistantService.getConversation(product.id, activeConversationId);
-      setActiveConversation(data);
-      setMessages(data.messages || []);
-      setTimeout(() => scrollToBottom(false), 50);
+      if (data && data.id) {
+        setActiveConversation(data);
+        const msgList = Array.isArray(data.messages)
+          ? data.messages.filter((m): m is AssistantMessage => Boolean(m && typeof m === 'object' && m.id))
+          : [];
+        setMessages(msgList);
+        setTimeout(() => scrollToBottom(false), 50);
+      }
     } catch (err: any) {
       const status = err?.statusCode;
       if (status === 401 || status === 403) {
@@ -148,7 +155,10 @@ export function ProductAssistantPage(): React.ReactElement {
       const newConv = await assistantService.createConversation(product.id, {
         title: initialQuery ? (initialQuery.slice(0, 45) + (initialQuery.length > 45 ? '...' : '')) : 'New Compliance Query',
       });
-      setConversations((prev) => [newConv, ...prev]);
+      if (!newConv || !newConv.id) {
+        throw new Error('Server returned an invalid conversation structure.');
+      }
+      setConversations((prev) => [newConv, ...prev.filter((c) => Boolean(c && c.id && c.id !== newConv.id))]);
       setActiveConversationId(newConv.id);
       setActiveConversation(newConv);
       setMessages([]);
@@ -191,15 +201,20 @@ export function ProductAssistantPage(): React.ReactElement {
         includeProductContext: true,
       });
 
+      if (!res?.message || !res.message.id) {
+        throw new Error('Assistant did not return a valid response message.');
+      }
+
       // Append real assistant response with citations
       setMessages((prev) => {
         // Filter out temp message if server returned it or just append assistant message
-        return [...prev.filter((m) => m.id !== tempUserMsg.id), tempUserMsg, res.message];
+        const withoutTemp = prev.filter((m) => Boolean(m && m.id && m.id !== tempUserMsg.id));
+        return [...withoutTemp, tempUserMsg, res.message];
       });
 
       // Update conversation title if needed in sidebar list
       setConversations((prev) =>
-        prev.map((c) => (c.id === conversationId ? { ...c, updatedAt: new Date().toISOString() } : c))
+        prev.map((c) => (c && c.id === conversationId ? { ...c, updatedAt: new Date().toISOString() } : c))
       );
     } catch (err: any) {
       const status = err?.statusCode;
@@ -357,7 +372,9 @@ export function ProductAssistantPage(): React.ReactElement {
                   <p className="text-[11px] mt-1">Start a conversation about this product's BIS compliance.</p>
                 </div>
               ) : (
-                conversations.map((conv) => {
+                conversations
+                  .filter((conv): conv is AssistantConversation => Boolean(conv && typeof conv === 'object' && conv.id))
+                  .map((conv) => {
                   const isActive = conv.id === activeConversationId;
                   return (
                     <button
@@ -475,9 +492,11 @@ export function ProductAssistantPage(): React.ReactElement {
                   </div>
                 </div>
               ) : (
-                messages.map((msg) => {
+                messages
+                  .filter((msg): msg is AssistantMessage => Boolean(msg && typeof msg === 'object' && msg.id))
+                  .map((msg) => {
                   const isUser = msg.role === 'USER';
-                  const citations = msg.citations || [];
+                  const citations = Array.isArray(msg.citations) ? msg.citations.filter(Boolean) : [];
 
                   return (
                     <div
@@ -660,7 +679,7 @@ export function ProductAssistantPage(): React.ReactElement {
 
           <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
             {activeEvidenceMessage?.citations && activeEvidenceMessage.citations.length > 0 ? (
-              activeEvidenceMessage.citations.map((cite, idx) => {
+              activeEvidenceMessage.citations.filter(Boolean).map((cite, idx) => {
                 const isHighlighted = selectedCitation?.sourceTitle === cite.sourceTitle;
                 return (
                   <div

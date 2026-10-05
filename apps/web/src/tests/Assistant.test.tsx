@@ -266,4 +266,40 @@ describe('Phase 16.3 — Frontend Product AI Assistant Workspace', () => {
     ).toBeDefined();
     expect(screen.getByRole('button', { name: /Retry/i })).toBeDefined();
   });
+
+  it('renders safely without crashing when conversations list contains undefined or null items (regression test for undefined.id)', async () => {
+    // Simulates an API response where conversations list contains undefined/null or malformed entries
+    vi.mocked(assistantService.getConversations).mockResolvedValueOnce([
+      undefined as any,
+      mockConversation,
+      null as any,
+      { id: '' } as any,
+    ]);
+    vi.mocked(assistantService.getConversation).mockResolvedValueOnce(mockConversation);
+
+    renderAssistantPage();
+
+    // Verify it renders the valid conversation without crashing with "Cannot read properties of undefined (reading 'id')"
+    expect(await screen.findByText('Geyser IS 302 Compliance Query')).toBeDefined();
+  });
+
+  it('renders safely when active conversation has empty or corrupt messages array', async () => {
+    const corruptConv: AssistantConversation = {
+      id: 'conv-corrupt-1',
+      productId: 'prod-uuid-1234',
+      userId: 'user-uuid-1111',
+      title: 'Corrupt Message Query',
+      createdAt: '2026-09-28T10:00:00.000Z',
+      updatedAt: '2026-09-28T10:00:00.000Z',
+      messages: [undefined as any, null as any],
+    };
+
+    vi.mocked(assistantService.getConversations).mockResolvedValueOnce([corruptConv]);
+    vi.mocked(assistantService.getConversation).mockResolvedValueOnce(corruptConv);
+
+    renderAssistantPage();
+
+    // Should load the conversation without crashing
+    expect(await screen.findByText('Corrupt Message Query')).toBeDefined();
+  });
 });

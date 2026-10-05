@@ -6,10 +6,10 @@ import type {
   SendAssistantMessageInput,
 } from '@bis/shared';
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 //  Frontend Assistant Service
 //  Calls backend /api/v1/products/:id/assistant endpoints.
+//  Safely handles both unwrapped data from apiClient and legacy wrapped envelopes.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface AssistantConversationsResponse {
@@ -25,10 +25,22 @@ export const assistantService = {
    * Retrieves all assistant conversations for a specific product.
    */
   async getConversations(productId: string): Promise<AssistantConversation[]> {
-    const res = await apiClient.get<AssistantConversationsResponse>(
-      `/products/${productId}/assistant/conversations`
-    );
-    return res.conversations;
+    const raw = await apiClient.get<
+      AssistantConversation[] | { conversations?: AssistantConversation[]; data?: AssistantConversation[] }
+    >(`/products/${productId}/assistant/conversations`);
+
+    if (Array.isArray(raw)) {
+      return raw;
+    }
+    if (raw && typeof raw === 'object') {
+      if (Array.isArray((raw as any).conversations)) {
+        return (raw as any).conversations;
+      }
+      if (Array.isArray((raw as any).data)) {
+        return (raw as any).data;
+      }
+    }
+    return [];
   },
 
   /**
@@ -38,11 +50,19 @@ export const assistantService = {
     productId: string,
     input: CreateConversationInput = {}
   ): Promise<AssistantConversation> {
-    const res = await apiClient.post<AssistantConversationResponse>(
-      `/products/${productId}/assistant/conversations`,
-      input
-    );
-    return res.conversation;
+    const raw = await apiClient.post<
+      AssistantConversation | { conversation?: AssistantConversation; data?: AssistantConversation }
+    >(`/products/${productId}/assistant/conversations`, input);
+
+    if (raw && typeof raw === 'object') {
+      if ('conversation' in raw && (raw as any).conversation) {
+        return (raw as any).conversation;
+      }
+      if ('data' in raw && (raw as any).data && typeof (raw as any).data === 'object') {
+        return (raw as any).data;
+      }
+    }
+    return raw as AssistantConversation;
   },
 
   /**
@@ -52,10 +72,19 @@ export const assistantService = {
     productId: string,
     conversationId: string
   ): Promise<AssistantConversation> {
-    const res = await apiClient.get<AssistantConversationResponse>(
-      `/products/${productId}/assistant/conversations/${conversationId}`
-    );
-    return res.conversation;
+    const raw = await apiClient.get<
+      AssistantConversation | { conversation?: AssistantConversation; data?: AssistantConversation }
+    >(`/products/${productId}/assistant/conversations/${conversationId}`);
+
+    if (raw && typeof raw === 'object') {
+      if ('conversation' in raw && (raw as any).conversation) {
+        return (raw as any).conversation;
+      }
+      if ('data' in raw && (raw as any).data && typeof (raw as any).data === 'object') {
+        return (raw as any).data;
+      }
+    }
+    return raw as AssistantConversation;
   },
 
   /**
@@ -66,10 +95,13 @@ export const assistantService = {
     conversationId: string,
     input: SendAssistantMessageInput
   ): Promise<AssistantQueryResponse> {
-    const res = await apiClient.post<AssistantQueryResponse>(
-      `/products/${productId}/assistant/conversations/${conversationId}/messages`,
-      input
-    );
-    return res;
+    const raw = await apiClient.post<
+      AssistantQueryResponse | { data?: AssistantQueryResponse }
+    >(`/products/${productId}/assistant/conversations/${conversationId}/messages`, input);
+
+    if (raw && typeof raw === 'object' && 'data' in raw && (raw as any).data?.message) {
+      return (raw as any).data;
+    }
+    return raw as AssistantQueryResponse;
   },
 };

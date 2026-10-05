@@ -75,11 +75,11 @@ Accurately translate the following text from ${sourceLangName} to ${targetLangNa
 === SOURCE TEXT (${sourceLangName}) ===
 ${text}`;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+    let activeModel = this.model;
 
-    let response: Response;
-    try {
-      response = await fetch(url, {
+    const makeRequest = async (m: string) => {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${this.apiKey}`;
+      return fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -97,6 +97,29 @@ ${text}`;
           },
         }),
       });
+    };
+
+    let response: Response;
+    try {
+      response = await makeRequest(activeModel);
+      if (!response.ok && (response.status === 404 || response.status === 503) && activeModel === 'gemini-2.5-flash') {
+        try {
+          const cloned = response.clone();
+          const errPeek = await cloned.text();
+          if (errPeek.includes('gemini-3.8-flash') || errPeek.includes('no longer available') || response.status === 503) {
+            logger.info('Gemini translation model gemini-2.5-flash retired by Google or unavailable, falling back to gemini-3.8-flash');
+            activeModel = 'gemini-3.8-flash';
+            response = await makeRequest(activeModel);
+            if (!response.ok && response.status === 503) {
+              logger.info('Gemini translation model gemini-3.8-flash experiencing 503 high demand, falling back to gemini-flash-latest');
+              activeModel = 'gemini-flash-latest';
+              response = await makeRequest(activeModel);
+            }
+          }
+        } catch {
+          // ignore peek error and keep original response
+        }
+      }
     } catch (networkErr: unknown) {
       const msg = networkErr instanceof Error ? networkErr.message : String(networkErr);
       logger.error('Gemini translation network error', { error: msg });

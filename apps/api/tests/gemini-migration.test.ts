@@ -42,6 +42,8 @@ describe('Phase 1.1 — Gemini-Only AI Provider & Multilingual Suite', () => {
   ];
 
   beforeEach(() => {
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.AI_API_KEY;
     setEmbeddingProvider(null);
     TranslationProviderFactory.setProvider(null);
   });
