@@ -302,4 +302,50 @@ describe('Phase 16.3 — Frontend Product AI Assistant Workspace', () => {
     // Should load the conversation without crashing
     expect(await screen.findByText('Corrupt Message Query')).toBeDefined();
   });
+
+  it('renders LED Light Fitting product and displays grounded assistant response with IS 10322 citations', async () => {
+    const ledConversation: AssistantConversation = {
+      id: 'conv-led-1',
+      productId: 'prod-uuid-1234',
+      userId: 'user-uuid-1111',
+      title: 'LED Fitting Compliance Query',
+      createdAt: '2026-10-05T10:00:00.000Z',
+      updatedAt: '2026-10-05T10:00:00.000Z',
+      messages: [
+        {
+          id: 'msg-led-1',
+          conversationId: 'conv-led-1',
+          role: 'USER',
+          content: 'What BIS standards are applicable to my LED light fitting?',
+          grounded: true,
+          createdAt: '2026-10-05T10:00:00.000Z',
+        },
+        {
+          id: 'msg-led-2',
+          conversationId: 'conv-led-1',
+          role: 'ASSISTANT',
+          content: 'The mandatory standard for your LED light fitting is IS 10322 (Part 5/Sec 1) : 2012 under Scheme I.',
+          grounded: true,
+          citations: [
+            {
+              citationIndex: 1,
+              isNumber: 'IS 10322 (Part 5/Sec 1) : 2012',
+              sourceTitle: 'Bureau of Indian Standards Official Portal',
+              authorityLevel: 'AUTHORITATIVE',
+              sourceUrl: 'https://services.bis.gov.in/php/BIS_2.0/bisconnect/knowyourstandards/indian_standards/isdetails/10322',
+            },
+          ],
+          createdAt: '2026-10-05T10:00:05.000Z',
+        },
+      ],
+    };
+
+    vi.mocked(assistantService.getConversations).mockResolvedValueOnce([ledConversation]);
+    vi.mocked(assistantService.getConversation).mockResolvedValueOnce(ledConversation);
+
+    renderAssistantPage();
+
+    expect(await screen.findByText(/The mandatory standard for your LED light fitting is IS 10322/i)).toBeDefined();
+    expect(screen.getAllByText(/IS 10322 \(Part 5\/Sec 1\) : 2012/i).length).toBeGreaterThanOrEqual(2);
+  });
 });

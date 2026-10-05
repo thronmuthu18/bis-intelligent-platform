@@ -190,8 +190,8 @@ The runtime crash `Unexpected Application Error! Cannot read properties of undef
 - **Result**: `SUCCESS` (Exit code: 0)
 - **Summary**:
   - **Backend (`@bis/api`)**: 21 test files, 293 tests passed, 0 failed.
-  - **Frontend (`@bis/web`)**: 16 test files, 115 tests passed, 0 failed.
-  - **Total**: 37 test files, 408 tests passed, 0 failed.
+  - **Frontend (`@bis/web`)**: 16 test files, 116 tests passed, 0 failed.
+  - **Total**: 37 test files, 409 tests passed, 0 failed.
 
 ---
 
