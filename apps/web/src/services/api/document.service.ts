@@ -14,6 +14,13 @@ export interface UploadDocumentOptions {
   notes?: string;
 }
 
+function unwrap<T>(res: T | { data: T }): T {
+  if (res && typeof res === 'object' && 'data' in res && (res as Record<string, unknown>).data !== undefined) {
+    return (res as { data: T }).data;
+  }
+  return res as T;
+}
+
 export const documentService = {
   /**
    * Uploads a document via multipart/form-data.
@@ -31,31 +38,32 @@ export const documentService = {
       formData.append('notes', options.notes);
     }
 
-    const res = await apiClient.post<{ status: string; data: ProductDocumentItem }>(
+    const res = await apiClient.post<ProductDocumentItem | { status?: string; data: ProductDocumentItem }>(
       `/products/${productId}/documents`,
       formData
     );
-    return res.data;
+    return unwrap(res);
   },
 
   /**
    * Retrieves all documents for a product.
    */
   async getDocuments(productId: string): Promise<ProductDocumentItem[]> {
-    const res = await apiClient.get<{ status: string; data: ProductDocumentItem[] }>(
+    const res = await apiClient.get<ProductDocumentItem[] | { status?: string; data: ProductDocumentItem[] }>(
       `/products/${productId}/documents`
     );
-    return res.data;
+    const data = unwrap(res);
+    return Array.isArray(data) ? data : [];
   },
 
   /**
    * Retrieves a single document by ID with extraction and page evidence.
    */
   async getDocumentById(productId: string, documentId: string): Promise<ProductDocumentItem> {
-    const res = await apiClient.get<{ status: string; data: ProductDocumentItem }>(
+    const res = await apiClient.get<ProductDocumentItem | { status?: string; data: ProductDocumentItem }>(
       `/products/${productId}/documents/${documentId}`
     );
-    return res.data;
+    return unwrap(res);
   },
 
   /**
@@ -66,11 +74,11 @@ export const documentService = {
     documentId: string,
     input: VerifyDocumentInput
   ): Promise<ProductDocumentItem> {
-    const res = await apiClient.post<{ status: string; data: ProductDocumentItem }>(
+    const res = await apiClient.post<ProductDocumentItem | { status?: string; data: ProductDocumentItem }>(
       `/products/${productId}/documents/${documentId}/verify`,
       input
     );
-    return res.data;
+    return unwrap(res);
   },
 
   /**
@@ -80,30 +88,30 @@ export const documentService = {
     productId: string,
     documentId: string
   ): Promise<{ success: boolean; message: string }> {
-    const res = await apiClient.delete<{ status: string; data: { success: boolean; message: string } }>(
+    const res = await apiClient.delete<{ success: boolean; message: string } | { status?: string; data: { success: boolean; message: string } }>(
       `/products/${productId}/documents/${documentId}`
     );
-    return res.data;
+    return unwrap(res);
   },
 
   /**
    * Retrieves document completeness analysis and readiness score.
    */
   async getCompleteness(productId: string): Promise<ProductDocumentCompletenessResponse> {
-    const res = await apiClient.get<{ status: string; data: ProductDocumentCompletenessResponse }>(
+    const res = await apiClient.get<ProductDocumentCompletenessResponse | { status?: string; data: ProductDocumentCompletenessResponse }>(
       `/products/${productId}/documents/completeness`
     );
-    return res.data;
+    return unwrap(res);
   },
 
   /**
    * Retrieves document requirement mapping matrices.
    */
   async getRequirementMappings(productId: string): Promise<DocumentRequirementMappingResponse> {
-    const res = await apiClient.get<{ status: string; data: DocumentRequirementMappingResponse }>(
+    const res = await apiClient.get<DocumentRequirementMappingResponse | { status?: string; data: DocumentRequirementMappingResponse }>(
       `/products/${productId}/documents/requirements`
     );
-    return res.data;
+    return unwrap(res);
   },
 
   /**
@@ -113,10 +121,10 @@ export const documentService = {
     productId: string,
     documentId: string
   ): Promise<DocumentEvidenceResponse> {
-    const res = await apiClient.get<{ status: string; data: DocumentEvidenceResponse }>(
+    const res = await apiClient.get<DocumentEvidenceResponse | { status?: string; data: DocumentEvidenceResponse }>(
       `/products/${productId}/documents/${documentId}/evidence`
     );
-    return res.data;
+    return unwrap(res);
   },
 
   /**

@@ -80,6 +80,7 @@ export class DocumentController {
       );
 
       res.status(201).json({
+        success: true,
         status: 'success',
         data: document,
         message: 'Document uploaded and analyzed successfully.',
@@ -105,6 +106,7 @@ export class DocumentController {
       const documents = await documentIntelligenceService.getDocuments(productId, userId);
 
       res.status(200).json({
+        success: true,
         status: 'success',
         data: documents,
       });
@@ -129,6 +131,7 @@ export class DocumentController {
       const completeness = await documentIntelligenceService.getCompleteness(productId, userId);
 
       res.status(200).json({
+        success: true,
         status: 'success',
         data: completeness,
       });
@@ -153,6 +156,7 @@ export class DocumentController {
       const mappings = await documentIntelligenceService.getRequirementMappings(productId, userId);
 
       res.status(200).json({
+        success: true,
         status: 'success',
         data: mappings,
       });
@@ -181,6 +185,7 @@ export class DocumentController {
       );
 
       res.status(200).json({
+        success: true,
         status: 'success',
         data: document,
       });
@@ -215,6 +220,7 @@ export class DocumentController {
       );
 
       res.status(200).json({
+        success: true,
         status: 'success',
         data: document,
         message: 'Document verification updated successfully.',
@@ -244,6 +250,7 @@ export class DocumentController {
       );
 
       res.status(200).json({
+        success: true,
         status: 'success',
         data: result,
       });
@@ -272,6 +279,7 @@ export class DocumentController {
       );
 
       res.status(200).json({
+        success: true,
         status: 'success',
         data: evidence,
       });

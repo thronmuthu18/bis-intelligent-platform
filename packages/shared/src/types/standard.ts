@@ -104,6 +104,7 @@ export interface StandardSummary {
   department?: string;
   currentEdition?: string;
   publicationDate?: string;
+  relevanceScore?: number;
   sourceDocument?: SourceDocument;
 }
 

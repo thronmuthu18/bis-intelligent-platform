@@ -13,21 +13,31 @@ export interface NormalizedAttributeResult {
  */
 const SYNONYM_MAP: Record<string, string> = {
   // Lighting & Electrical
-  'led lamp': 'led luminaire',
+  'led light fitting': 'led luminaire luminaires lighting fixture general purpose luminaire',
+  'led fitting': 'led luminaire luminaires lighting fixture',
+  'light fitting': 'luminaire lighting fixture',
+  'lighting fitting': 'luminaire lighting fixture',
+  'lighting fixture': 'luminaire lighting fixture',
+  'led luminaire': 'led luminaire lighting fixture',
+  'led luminaires': 'led luminaire lighting fixture',
+  'luminaire': 'luminaire lighting fixture general purpose luminaires',
+  'luminaires': 'luminaires lighting fixture general purpose luminaires',
+  'led lamp': 'self ballasted led lamp luminaire',
   'led bulb': 'self ballasted led lamp',
   'led light': 'led luminaire lighting fixture',
   'street light': 'street lighting luminaire',
   'flood light': 'floodlight luminaire',
   'downlight': 'recessed luminaire',
   'luminary': 'luminaire',
-  'light fixture': 'luminaire lighting fixture',
-  'lighting fitting': 'luminaire lighting fixture',
+  'controlgear': 'electronic controlgear led modules',
+  'led driver': 'electronic controlgear for led modules',
+  'lamp controlgear': 'electronic controlgear for led modules',
   'plug': 'plug and socket-outlet',
   'socket': 'plug and socket-outlet',
   'power cord': 'plugs and socket-outlets cord set',
   'switch': 'switches for domestic and similar fixed installations',
   'wire': 'pvc insulated electric cable wire',
-  'cable': 'electric cable',
+  'cable': 'electric cable pvc insulated',
 
   // Electronics & Appliances
   'geyser': 'stationary storage water heater',
@@ -45,6 +55,11 @@ const SYNONYM_MAP: Record<string, string> = {
   'steel': 'structural steel bar rod',
   'tmt': 'high strength deformed steel bars',
   'pvc pipe': 'unplasticized pvc pipe',
+  'tiles': 'ceramic mosaic stone tiles',
+  'tile': 'ceramic mosaic stone tiles',
+  'adhesive': 'adhesives for ceramic mosaic tiles',
+  'adhesives': 'adhesives for ceramic mosaic tiles',
+  'drinking water': 'drinking water specification',
 };
 
 /**
@@ -123,4 +138,90 @@ export function extractExplicitIsNumber(text: string): string | null {
     return `IS ${rawNumber}`.toUpperCase();
   }
   return null;
+}
+
+const COMMON_CONVERSATIONAL_STOP_WORDS = new Set([
+  'what', 'which', 'is', 'are', 'the', 'for', 'to', 'in', 'of', 'and', 'or', 'a', 'an',
+  'this', 'my', 'product', 'standards', 'standard', 'apply', 'may', 'check', 'need', 'do',
+  'does', 'can', 'you', 'tell', 'me', 'about', 'how', 'when', 'where', 'requirement',
+  'requirements', 'compliance', 'bis', 'indian', 'please', 'explain', 'show', 'list',
+  'with', 'from', 'by', 'at', 'on', 'as', 'into', 'under',
+]);
+
+export interface TokenizedQuery {
+  originalQuery: string;
+  cleanText: string;
+  explicitIsNumber: string | null;
+  primaryTokens: string[];
+  expandedTokens: string[];
+  allSearchTokens: string[];
+}
+
+/**
+ * Tokenizes a free-form search or conversational query for standards retrieval.
+ * Strips noise/stop words, identifies potential IS numbers, and adds domain synonym tokens.
+ */
+export function tokenizeSearchQuery(query: string): TokenizedQuery {
+  const originalQuery = (query || '').trim();
+  if (!originalQuery) {
+    return {
+      originalQuery: '',
+      cleanText: '',
+      explicitIsNumber: null,
+      primaryTokens: [],
+      expandedTokens: [],
+      allSearchTokens: [],
+    };
+  }
+
+  const explicitIs = extractExplicitIsNumber(originalQuery);
+
+  // Normalize query string: replace hyphens, slashes, punctuation with spaces
+  let clean = originalQuery
+    .toLowerCase()
+    .replace(/[-_/]/g, ' ')
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Extract base words
+  const words = clean.split(/\s+/).filter(Boolean);
+  const primaryTokens = words.filter((w) => w.length >= 2 && !COMMON_CONVERSATIONAL_STOP_WORDS.has(w));
+
+  // Collect synonym expansions
+  const expandedTokenSet = new Set<string>();
+  for (const [phrase, expansion] of Object.entries(SYNONYM_MAP)) {
+    if (clean.includes(phrase)) {
+      const expWords = expansion.toLowerCase().split(/\s+/).filter(Boolean);
+      for (const ew of expWords) {
+        if (ew.length >= 3 && !COMMON_CONVERSATIONAL_STOP_WORDS.has(ew)) {
+          expandedTokenSet.add(ew);
+        }
+      }
+    }
+  }
+
+  // Also check individual primary tokens for synonym expansion
+  for (const token of primaryTokens) {
+    if (SYNONYM_MAP[token]) {
+      const expWords = SYNONYM_MAP[token].toLowerCase().split(/\s+/).filter(Boolean);
+      for (const ew of expWords) {
+        if (ew.length >= 3 && !COMMON_CONVERSATIONAL_STOP_WORDS.has(ew)) {
+          expandedTokenSet.add(ew);
+        }
+      }
+    }
+  }
+
+  const expandedTokens = Array.from(expandedTokenSet);
+  const allSearchTokens = Array.from(new Set([...primaryTokens, ...expandedTokens]));
+
+  return {
+    originalQuery,
+    cleanText: clean,
+    explicitIsNumber: explicitIs,
+    primaryTokens,
+    expandedTokens,
+    allSearchTokens,
+  };
 }

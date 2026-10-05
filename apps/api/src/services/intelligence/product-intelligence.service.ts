@@ -1,7 +1,8 @@
 import crypto from 'crypto';
 import { prisma } from '../../db/client.js';
 import { executeHybridSearch } from '../rag/hybridSearch.js';
-import { normalizeAttribute } from './normalizer.js';
+import { normalizeAttribute, tokenizeSearchQuery } from './normalizer.js';
+import { mapCategoryToBisSector } from './category-sector-mapper.js';
 import {
   generateCandidateQueries,
   ProductSearchProfile,
@@ -96,17 +97,28 @@ export async function buildProductSearchProfile(
     }
   }
 
+  const nameTokens = tokenizeSearchQuery(product.name).allSearchTokens;
+  const categoryTokens = tokenizeSearchQuery(product.category).allSearchTokens;
+  const descTokens = product.description ? tokenizeSearchQuery(product.description).allSearchTokens : [];
+  const useTokens = product.intendedUse ? tokenizeSearchQuery(product.intendedUse).allSearchTokens : [];
+  const normalizedTokens = Array.from(new Set([...nameTokens, ...categoryTokens, ...descTokens, ...useTokens]));
+
+  const mappedSector = mapCategoryToBisSector(product.category);
+
   return {
     productId: product.id,
     name: product.name,
     category: product.category,
     description: product.description || undefined,
     intendedUse: product.intendedUse || undefined,
-    sector: product.productCategory || undefined,
+    sector: product.productCategory || mappedSector || undefined,
     material: attributesMap.material || attributesMap.composition || undefined,
     application: attributesMap.application || undefined,
+    targetMarket: product.targetMarket || undefined,
+    manufacturerType: product.manufacturerType || undefined,
+    technicalSpecifications: (product.technicalSpecifications as any) || undefined,
     attributes: attributesMap,
-    normalizedTokens: [],
+    normalizedTokens,
   };
 }
 

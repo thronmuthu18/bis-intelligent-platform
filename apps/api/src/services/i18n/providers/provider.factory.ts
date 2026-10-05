@@ -4,7 +4,7 @@
 
 import type { ITranslationProvider } from './translation-provider.interface.js';
 import { MockTranslationProvider } from './mock-translation.provider.js';
-import { OpenAITranslationProvider } from './openai-translation.provider.js';
+import { GeminiTranslationProvider } from './gemini-translation.provider.js';
 
 export class TranslationProviderFactory {
   private static instance: ITranslationProvider | null = null;
@@ -14,12 +14,22 @@ export class TranslationProviderFactory {
       return this.instance;
     }
 
-    const providerType = (process.env.TRANSLATION_PROVIDER || 'mock').toLowerCase().trim();
+    const providerType = (
+      process.env.TRANSLATION_PROVIDER ||
+      (process.env.AI_PROVIDER === 'gemini' ? 'gemini' : 'mock')
+    )
+      .toLowerCase()
+      .trim();
 
     switch (providerType) {
-      case 'openai':
-        this.instance = new OpenAITranslationProvider();
+      case 'gemini':
+      case 'google':
+        this.instance = new GeminiTranslationProvider();
         break;
+      case 'openai':
+        throw new Error(
+          'OpenAI translation provider is disabled. Google Gemini is the configured AI provider. Set TRANSLATION_PROVIDER=gemini.'
+        );
       case 'mock':
       default:
         this.instance = new MockTranslationProvider();

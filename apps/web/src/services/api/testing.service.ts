@@ -10,6 +10,13 @@ import type {
   ApiResponse,
 } from '@bis/shared';
 
+function unwrap<T>(res: T | { data: T }): T {
+  if (res && typeof res === 'object' && 'data' in res && (res as Record<string, unknown>).data !== undefined) {
+    return (res as { data: T }).data;
+  }
+  return res as T;
+}
+
 export const testingService = {
   /**
    * Run or retrieve cached testing intelligence analysis.
@@ -18,21 +25,21 @@ export const testingService = {
     productId: string,
     input: AnalyzeTestingInput = {}
   ): Promise<ProductTestingAnalysisResponse> {
-    const res = await apiClient.post<ApiResponse<ProductTestingAnalysisResponse>>(
+    const res = await apiClient.post<ApiResponse<ProductTestingAnalysisResponse> | ProductTestingAnalysisResponse>(
       `/products/${productId}/testing/analyze`,
       input
     );
-    return res.data;
+    return unwrap(res);
   },
 
   /**
    * Get latest completed testing analysis.
    */
   async getTestingAnalysis(productId: string): Promise<ProductTestingAnalysisResponse | null> {
-    const res = await apiClient.get<ApiResponse<ProductTestingAnalysisResponse | null>>(
+    const res = await apiClient.get<ApiResponse<ProductTestingAnalysisResponse | null> | ProductTestingAnalysisResponse | null>(
       `/products/${productId}/testing`
     );
-    return res.data;
+    return unwrap(res);
   },
 
   /**
@@ -54,10 +61,10 @@ export const testingService = {
     if (filters?.status) params.append('status', filters.status);
 
     const query = params.toString() ? `?${params.toString()}` : '';
-    const res = await apiClient.get<ApiResponse<ProductTestRequirementItem[]>>(
+    const res = await apiClient.get<ApiResponse<ProductTestRequirementItem[]> | ProductTestRequirementItem[]>(
       `/products/${productId}/testing/requirements${query}`
     );
-    return res.data;
+    return unwrap(res);
   },
 
   /**
@@ -77,10 +84,10 @@ export const testingService = {
     if (filters?.limit) params.append('limit', filters.limit.toString());
 
     const query = params.toString() ? `?${params.toString()}` : '';
-    const res = await apiClient.get<ApiResponse<LaboratoryMatchResult[]>>(
+    const res = await apiClient.get<ApiResponse<LaboratoryMatchResult[]> | LaboratoryMatchResult[]>(
       `/products/${productId}/testing/laboratories${query}`
     );
-    return res.data;
+    return unwrap(res);
   },
 
   /**
@@ -90,20 +97,20 @@ export const testingService = {
     productId: string,
     input: CreateProductLaboratoryReviewInput
   ): Promise<ProductLaboratoryReviewItem> {
-    const res = await apiClient.post<ApiResponse<ProductLaboratoryReviewItem>>(
+    const res = await apiClient.post<ApiResponse<ProductLaboratoryReviewItem> | ProductLaboratoryReviewItem>(
       `/products/${productId}/testing/laboratories/reviews`,
       input
     );
-    return res.data;
+    return unwrap(res);
   },
 
   /**
    * Get user laboratory review history for a product.
    */
   async getLaboratoryReviews(productId: string): Promise<ProductLaboratoryReviewItem[]> {
-    const res = await apiClient.get<ApiResponse<ProductLaboratoryReviewItem[]>>(
+    const res = await apiClient.get<ApiResponse<ProductLaboratoryReviewItem[]> | ProductLaboratoryReviewItem[]>(
       `/products/${productId}/testing/laboratories/reviews`
     );
-    return res.data;
+    return unwrap(res);
   },
 };

@@ -144,13 +144,22 @@ export const envSchema = z
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             path: ['GEMINI_API_KEY'],
-            message: 'GEMINI_API_KEY or AI_API_KEY is required when AI/Embedding provider is "gemini".',
+            message: 'Gemini API key is required when AI_PROVIDER is "gemini". Set GEMINI_API_KEY or AI_API_KEY in environment.',
           });
         }
       }
 
       // 4. Translation Provider Secret validation
-      if (data.TRANSLATION_PROVIDER.toLowerCase() === 'openai') {
+      const effectiveTranslationProvider = data.TRANSLATION_PROVIDER.toLowerCase();
+      if (effectiveTranslationProvider === 'gemini' || effectiveTranslationProvider === 'google') {
+        if (!data.GEMINI_API_KEY && !data.AI_API_KEY) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['GEMINI_API_KEY'],
+            message: 'Gemini API key is required when TRANSLATION_PROVIDER is "gemini". Set GEMINI_API_KEY or AI_API_KEY in environment.',
+          });
+        }
+      } else if (effectiveTranslationProvider === 'openai') {
         if (!data.OPENAI_API_KEY && !data.AI_API_KEY) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,

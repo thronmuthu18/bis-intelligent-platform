@@ -7,6 +7,8 @@ vi.stubEnv('NODE_ENV', 'test');
 vi.stubEnv('LOG_LEVEL', 'error');
 vi.stubEnv('FRONTEND_URL', 'http://localhost:5173');
 vi.stubEnv('JWT_SECRET', 'test-jwt-secret-must-be-at-least-32-characters-long!');
+vi.stubEnv('AI_PROVIDER', 'mock');
+vi.stubEnv('TRANSLATION_PROVIDER', 'mock');
 
 // ── In-Memory Database Stores ────────────────────────────────────────────────
 let mockProducts: any[] = [];

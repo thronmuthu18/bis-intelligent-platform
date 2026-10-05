@@ -499,6 +499,8 @@ describe('Phase 5 — Hybrid Search & RAG Foundation Tests', () => {
       expect(bodyStr).not.toContain('passwordHash');
       expect(bodyStr).not.toContain('JWT_SECRET');
       expect(bodyStr).not.toContain('OPENAI_API_KEY');
+      expect(bodyStr).not.toContain('GEMINI_API_KEY');
+      expect(bodyStr).not.toContain('AI_API_KEY');
       expect(bodyStr).not.toContain('embedding":[');
     });
   });

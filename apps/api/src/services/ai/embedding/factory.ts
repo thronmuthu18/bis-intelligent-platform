@@ -34,7 +34,11 @@ export function getEmbeddingProvider(): EmbeddingProvider {
     if (!geminiApiKey) {
       throw new Error('Gemini API key is missing. Set GEMINI_API_KEY or AI_API_KEY in environment.');
     }
-    const model = process.env.EMBEDDING_MODEL || process.env.AI_MODEL || 'text-embedding-004';
+    const model =
+      process.env.EMBEDDING_MODEL ||
+      (process.env.AI_MODEL && process.env.AI_MODEL.includes('embedding')
+        ? process.env.AI_MODEL
+        : 'text-embedding-004');
     logger.info(`Initialized GeminiEmbeddingProvider with model '${model}' (dim: 768)`);
     cachedProvider = new GeminiEmbeddingProvider(geminiApiKey, model, 768);
     return cachedProvider;

@@ -1,6 +1,8 @@
 import { prisma } from '../db/client.js';
 import { Prisma } from '@prisma/client';
 import { normalizeIsNumber } from './ingestion/normalizer.js';
+import { tokenizeSearchQuery } from './intelligence/normalizer.js';
+import { BIS_TECHNICAL_DIVISIONS, getCompatibleBisSectors } from './intelligence/category-sector-mapper.js';
 import { AppError } from '../utils/AppError.js';
 import {
   API_ERROR_CODES,
@@ -18,96 +20,220 @@ const MAX_PAGE_LIMIT = 50;
 const DEFAULT_PAGE_LIMIT = 10;
 
 /**
- * Searches and lists Indian Standards with filtering and pagination.
+ * Searches and lists Indian Standards with tokenized filtering, synonym expansion, and pagination.
  */
 export async function searchStandards(params: StandardSearchParams): Promise<StandardListResponse> {
   const page = Math.max(1, Number(params.page) || 1);
   const limit = Math.min(MAX_PAGE_LIMIT, Math.max(1, Number(params.limit) || DEFAULT_PAGE_LIMIT));
   const skip = (page - 1) * limit;
 
-  const whereClause: Prisma.StandardWhereInput = {
-    isActive: true,
-  };
-
-  // Status filter
-  if (params.status) {
-    whereClause.status = params.status as StandardStatus;
-  }
-
-  // Sector filter
+  // 1. Resolve Sector mapping
+  let sectorFilter: Prisma.StandardWhereInput | undefined = undefined;
   if (params.sector) {
-    whereClause.sector = {
-      contains: params.sector,
-      mode: 'insensitive',
+    const rawSector = params.sector.trim();
+    const isDirectDivision = BIS_TECHNICAL_DIVISIONS.some(
+      (div) => div.toLowerCase() === rawSector.toLowerCase()
+    );
+
+    if (isDirectDivision) {
+      sectorFilter = {
+        sector: { contains: rawSector, mode: Prisma.QueryMode.insensitive },
+      };
+    } else {
+      const compatible = getCompatibleBisSectors(rawSector);
+      if (compatible.length > 0) {
+        sectorFilter = {
+          OR: [
+            { sector: { contains: rawSector, mode: Prisma.QueryMode.insensitive } },
+            ...compatible.map((sec) => ({ sector: { contains: sec, mode: Prisma.QueryMode.insensitive } })),
+          ],
+        };
+      } else {
+        sectorFilter = {
+          sector: { contains: rawSector, mode: Prisma.QueryMode.insensitive },
+        };
+      }
+    }
+  }
+
+  // 2. Build Where Clause Builder (allows fallback if sector filter is too restrictive)
+  const buildWhere = (includeSector = true): Prisma.StandardWhereInput => {
+    const where: Prisma.StandardWhereInput = {
+      isActive: true,
     };
-  }
 
-  // Department filter
-  if (params.department) {
-    whereClause.department = {
-      contains: params.department,
-      mode: 'insensitive',
-    };
-  }
+    if (params.status) {
+      where.status = params.status as StandardStatus;
+    }
 
-  // Exact or normalized IS Number search
-  if (params.isNumber) {
-    const rawIs = params.isNumber.trim();
-    const canonical = normalizeIsNumber(rawIs);
+    const andConditions: Prisma.StandardWhereInput[] = [];
 
-    whereClause.OR = [
-      { isNumber: { contains: rawIs, mode: 'insensitive' } },
-      { canonicalNumber: { contains: canonical, mode: 'insensitive' } },
-    ];
-  }
+    if (includeSector && sectorFilter) {
+      if (sectorFilter.sector) {
+        where.sector = sectorFilter.sector;
+      } else {
+        andConditions.push(sectorFilter);
+      }
+    }
 
-  // Keyword query search (searches IS number, title, shortTitle, and scope)
-  if (params.q) {
-    const term = params.q.trim();
-    const canonicalTerm = normalizeIsNumber(term);
-
-    const textSearchConditions: Prisma.StandardWhereInput[] = [
-      { isNumber: { contains: term, mode: 'insensitive' } },
-      { title: { contains: term, mode: 'insensitive' } },
-      { shortTitle: { contains: term, mode: 'insensitive' } },
-      { scope: { contains: term, mode: 'insensitive' } },
-      { sector: { contains: term, mode: 'insensitive' } },
-      { department: { contains: term, mode: 'insensitive' } },
-    ];
-
-    if (canonicalTerm && canonicalTerm !== 'IS') {
-      textSearchConditions.push({
-        canonicalNumber: { contains: canonicalTerm, mode: 'insensitive' },
+    if (params.department) {
+      andConditions.push({
+        department: {
+          contains: params.department,
+          mode: Prisma.QueryMode.insensitive,
+        },
       });
     }
 
-    if (whereClause.OR) {
-      whereClause.AND = [
-        { OR: whereClause.OR },
-        { OR: textSearchConditions },
-      ];
-      delete whereClause.OR;
-    } else {
-      whereClause.OR = textSearchConditions;
+    // Exact or normalized IS Number search
+    if (params.isNumber) {
+      const rawIs = params.isNumber.trim();
+      const canonical = normalizeIsNumber(rawIs);
+      andConditions.push({
+        OR: [
+          { isNumber: { contains: rawIs, mode: Prisma.QueryMode.insensitive } },
+          { canonicalNumber: { contains: canonical, mode: Prisma.QueryMode.insensitive } },
+        ],
+      });
     }
-  }
 
-  const [total, records] = await Promise.all([
+    // Tokenized and multi-branch keyword search
+    if (params.q) {
+      const tokenized = tokenizeSearchQuery(params.q);
+      const queryConditions: Prisma.StandardWhereInput[] = [];
+
+      // 1. Exact canonical IS number if extracted
+      if (tokenized.explicitIsNumber) {
+        queryConditions.push(
+          { isNumber: { contains: tokenized.explicitIsNumber, mode: Prisma.QueryMode.insensitive } },
+          { canonicalNumber: { contains: normalizeIsNumber(tokenized.explicitIsNumber), mode: Prisma.QueryMode.insensitive } }
+        );
+      }
+
+      // 2. Full normalized text phrase match
+      if (tokenized.cleanText) {
+        queryConditions.push(
+          { isNumber: { contains: tokenized.cleanText, mode: Prisma.QueryMode.insensitive } },
+          { title: { contains: tokenized.cleanText, mode: Prisma.QueryMode.insensitive } },
+          { shortTitle: { contains: tokenized.cleanText, mode: Prisma.QueryMode.insensitive } },
+          { scope: { contains: tokenized.cleanText, mode: Prisma.QueryMode.insensitive } },
+          { sector: { contains: tokenized.cleanText, mode: Prisma.QueryMode.insensitive } },
+          { department: { contains: tokenized.cleanText, mode: Prisma.QueryMode.insensitive } }
+        );
+      }
+
+      // 3. Primary keywords token match
+      for (const token of tokenized.primaryTokens) {
+        if (token.length >= 2) {
+          queryConditions.push(
+            { isNumber: { contains: token, mode: Prisma.QueryMode.insensitive } },
+            { title: { contains: token, mode: Prisma.QueryMode.insensitive } },
+            { shortTitle: { contains: token, mode: Prisma.QueryMode.insensitive } },
+            { scope: { contains: token, mode: Prisma.QueryMode.insensitive } },
+            { sector: { contains: token, mode: Prisma.QueryMode.insensitive } }
+          );
+        }
+      }
+
+      // 4. Expanded domain synonym tokens match
+      for (const token of tokenized.expandedTokens) {
+        if (token.length >= 3) {
+          queryConditions.push(
+            { title: { contains: token, mode: Prisma.QueryMode.insensitive } },
+            { shortTitle: { contains: token, mode: Prisma.QueryMode.insensitive } },
+            { scope: { contains: token, mode: Prisma.QueryMode.insensitive } }
+          );
+        }
+      }
+
+      if (queryConditions.length > 0) {
+        andConditions.push({ OR: queryConditions });
+      }
+    }
+
+    if (andConditions.length === 1 && (andConditions[0] as any).OR) {
+      where.OR = (andConditions[0] as any).OR;
+    } else if (andConditions.length > 0) {
+      where.AND = andConditions;
+    }
+
+    return where;
+  };
+
+  let whereClause = buildWhere(true);
+  let [total, records] = await Promise.all([
     prisma.standard.count({ where: whereClause }),
     prisma.standard.findMany({
       where: whereClause,
       include: {
         sourceDocument: true,
       },
-      orderBy: [
-        { isNumber: 'asc' },
-      ],
-      skip,
-      take: limit,
+      take: 100,
     }),
   ]);
 
-  const standards = records.map((record) => ({
+  // Fallback: If sector constraint yielded 0 results and a text query or IS number was specified,
+  // retry without sector constraint so standards are not blocked by classification nuances.
+  if (total === 0 && sectorFilter && (params.q || params.isNumber)) {
+    whereClause = buildWhere(false);
+    [total, records] = await Promise.all([
+      prisma.standard.count({ where: whereClause }),
+      prisma.standard.findMany({
+        where: whereClause,
+        include: {
+          sourceDocument: true,
+        },
+        take: 100,
+      }),
+    ]);
+  }
+
+  // 3. Relevance Scoring & Sorting
+  const tokenizedQuery = params.q ? tokenizeSearchQuery(params.q) : null;
+  const scoredRecords = records.map((record) => {
+    let score = 0.5; // baseline match score
+    if (tokenizedQuery) {
+      const titleLower = record.title.toLowerCase();
+      const scopeLower = (record.scope || '').toLowerCase();
+      const isNumLower = record.isNumber.toLowerCase();
+
+      // Exact IS match
+      if (tokenizedQuery.explicitIsNumber && isNumLower.includes(tokenizedQuery.explicitIsNumber.toLowerCase())) {
+        score += 0.50;
+      }
+      // Exact phrase match
+      if (tokenizedQuery.cleanText && titleLower.includes(tokenizedQuery.cleanText)) {
+        score += 0.35;
+      } else if (tokenizedQuery.cleanText && scopeLower.includes(tokenizedQuery.cleanText)) {
+        score += 0.20;
+      }
+      // Primary tokens
+      for (const tok of tokenizedQuery.primaryTokens) {
+        if (titleLower.includes(tok)) {
+          score += 0.15;
+        } else if (scopeLower.includes(tok)) {
+          score += 0.08;
+        }
+      }
+      // Synonym tokens
+      for (const tok of tokenizedQuery.expandedTokens) {
+        if (titleLower.includes(tok)) {
+          score += 0.12;
+        } else if (scopeLower.includes(tok)) {
+          score += 0.06;
+        }
+      }
+    }
+    return { record, relevanceScore: Math.min(1.0, parseFloat(score.toFixed(4))) };
+  });
+
+  // Sort descending by relevance score
+  scoredRecords.sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+  // Apply pagination
+  const pagedItems = scoredRecords.slice(skip, skip + limit);
+
+  const standards = pagedItems.map(({ record, relevanceScore }) => ({
     id: record.id,
     isNumber: record.isNumber,
     canonicalNumber: record.canonicalNumber,
@@ -118,7 +244,10 @@ export async function searchStandards(params: StandardSearchParams): Promise<Sta
     sector: record.sector || undefined,
     department: record.department || undefined,
     currentEdition: record.currentEdition || undefined,
-    publicationDate: record.publicationDate?.toISOString() || undefined,
+    relevanceScore,
+    publicationDate: record.publicationDate instanceof Date
+      ? record.publicationDate.toISOString()
+      : (record.publicationDate ? String(record.publicationDate) : undefined),
     sourceDocument: record.sourceDocument
       ? {
           id: record.sourceDocument.id,
@@ -127,12 +256,20 @@ export async function searchStandards(params: StandardSearchParams): Promise<Sta
           sourceType: record.sourceDocument.sourceType,
           authorityLevel: record.sourceDocument.authorityLevel,
           documentType: record.sourceDocument.documentType || undefined,
-          publishedAt: record.sourceDocument.publishedAt?.toISOString() || undefined,
-          retrievedAt: record.sourceDocument.retrievedAt.toISOString(),
+          publishedAt: record.sourceDocument.publishedAt instanceof Date
+            ? record.sourceDocument.publishedAt.toISOString()
+            : (record.sourceDocument.publishedAt ? String(record.sourceDocument.publishedAt) : undefined),
+          retrievedAt: record.sourceDocument.retrievedAt instanceof Date
+            ? record.sourceDocument.retrievedAt.toISOString()
+            : String(record.sourceDocument.retrievedAt || new Date().toISOString()),
           versionLabel: record.sourceDocument.versionLabel || undefined,
           status: record.sourceDocument.status,
-          createdAt: record.sourceDocument.createdAt.toISOString(),
-          updatedAt: record.sourceDocument.updatedAt.toISOString(),
+          createdAt: record.sourceDocument.createdAt instanceof Date
+            ? record.sourceDocument.createdAt.toISOString()
+            : String(record.sourceDocument.createdAt || new Date().toISOString()),
+          updatedAt: record.sourceDocument.updatedAt instanceof Date
+            ? record.sourceDocument.updatedAt.toISOString()
+            : String(record.sourceDocument.updatedAt || new Date().toISOString()),
         }
       : undefined,
   }));

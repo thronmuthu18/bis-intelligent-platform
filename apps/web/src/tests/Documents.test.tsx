@@ -288,8 +288,18 @@ describe('Phase 9 — Frontend Document Intelligence Tests', () => {
     });
   });
 
-  it('6. Displays empty state when product has no documents uploaded', async () => {
+  it('6. Displays empty state when product has no documents uploaded without error banner', async () => {
     vi.mocked(documentService.getDocuments).mockResolvedValue([]);
+    vi.mocked(documentService.getCompleteness).mockResolvedValue({
+      ...mockCompleteness,
+      score: 0,
+      status: 'MISSING_DOCUMENTS',
+      totalRequired: 3,
+      verifiedCount: 0,
+      matchedCount: 0,
+      needsReviewCount: 0,
+      missingCount: 3,
+    });
 
     render(
       <MemoryRouter>
@@ -299,6 +309,29 @@ describe('Phase 9 — Frontend Document Intelligence Tests', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/No compliance documents found/i)).toBeInTheDocument();
+    });
+
+    // Ensure no error alert banner is displayed
+    expect(screen.queryByText(/Document Processing Alert/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Cannot read properties of undefined/i)).not.toBeInTheDocument();
+  });
+
+  it('7. Displays Document Processing Alert with real error message when document service fails', async () => {
+    vi.mocked(documentService.getDocuments).mockRejectedValue(
+      new Error('Unable to connect to the server. Please check your connection.')
+    );
+
+    render(
+      <MemoryRouter>
+        <ProductDocumentsPage />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Document Processing Alert')).toBeInTheDocument();
+      expect(
+        screen.getByText('Unable to connect to the server. Please check your connection.')
+      ).toBeInTheDocument();
     });
   });
 });

@@ -1,4 +1,3 @@
-import type { ApiResult, ApiError } from '@bis/shared';
 import { config } from '@/lib/config';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,11 +117,18 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     );
   }
 
-  let data: ApiResult<T>;
+  let data: unknown;
 
   try {
-    data = (await response.json()) as ApiResult<T>;
+    data = await response.json();
   } catch {
+    if (!response.ok) {
+      throw new ApiClientError(
+        `Request failed with status ${response.status}`,
+        'REQUEST_FAILED',
+        response.status,
+      );
+    }
     throw new ApiClientError(
       'The server returned an invalid response.',
       'INVALID_RESPONSE',
@@ -130,17 +136,43 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     );
   }
 
-  if (!data.success) {
-    const errorData = data as ApiError;
-    throw new ApiClientError(
-      errorData.error.message,
-      errorData.error.code,
-      response.status,
-      errorData.error.details,
-    );
+  const rawData = data as any;
+  const isExplicitFailure =
+    rawData?.success === false ||
+    rawData?.status === 'error' ||
+    rawData?.status === 'fail';
+
+  if (!response.ok || isExplicitFailure) {
+    const message =
+      rawData?.error?.message ||
+      rawData?.message ||
+      (typeof rawData?.error === 'string' ? rawData.error : undefined) ||
+      (typeof rawData === 'string' ? rawData : undefined) ||
+      `Request failed with status ${response.status}`;
+
+    const code =
+      rawData?.error?.code ||
+      rawData?.code ||
+      (response.status === 401
+        ? 'UNAUTHORIZED'
+        : response.status === 403
+        ? 'FORBIDDEN'
+        : response.status === 404
+        ? 'NOT_FOUND'
+        : response.status === 400
+        ? 'BAD_REQUEST'
+        : 'REQUEST_FAILED');
+
+    const details = rawData?.error?.details ?? rawData?.details;
+
+    throw new ApiClientError(message, code, response.status, details);
   }
 
-  return (data as { success: true; data: T }).data;
+  if (rawData !== null && typeof rawData === 'object' && 'data' in rawData) {
+    return rawData.data as T;
+  }
+
+  return rawData as T;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

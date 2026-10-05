@@ -28,6 +28,7 @@ export async function analyzeTesting(req: Request, res: Response, next: NextFunc
     );
 
     res.status(200).json({
+      success: true,
       status: 'success',
       data: analysis,
     });
@@ -53,6 +54,7 @@ export async function getTestingAnalysis(req: Request, res: Response, next: Next
 
     if (!analysis) {
       res.status(200).json({
+        success: true,
         status: 'success',
         data: null,
         message: 'No testing analysis has been run for this product yet.',
@@ -61,6 +63,7 @@ export async function getTestingAnalysis(req: Request, res: Response, next: Next
     }
 
     res.status(200).json({
+      success: true,
       status: 'success',
       data: analysis,
     });
@@ -91,6 +94,7 @@ export async function getTestRequirements(req: Request, res: Response, next: Nex
     });
 
     res.status(200).json({
+      success: true,
       status: 'success',
       data: requirements,
     });
@@ -125,6 +129,7 @@ export async function getLaboratories(req: Request, res: Response, next: NextFun
     });
 
     res.status(200).json({
+      success: true,
       status: 'success',
       data: laboratories,
     });
@@ -165,6 +170,7 @@ export async function createLaboratoryReview(req: Request, res: Response, next: 
     });
 
     res.status(201).json({
+      success: true,
       status: 'success',
       data: review,
     });
@@ -189,6 +195,7 @@ export async function getLaboratoryReviews(req: Request, res: Response, next: Ne
     const reviews = await testingIntelligenceService.getProductLaboratoryReviews(productId, userId);
 
     res.status(200).json({
+      success: true,
       status: 'success',
       data: reviews,
     });

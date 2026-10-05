@@ -1,5 +1,6 @@
 import { prisma } from '../../db/client.js';
 import { getEmbeddingProvider } from '../ai/embedding/factory.js';
+import { getCompatibleBisSectors } from '../intelligence/category-sector-mapper.js';
 import { logger } from '../../config/logger.js';
 import { AuthorityLevel, StandardStatus } from '@bis/shared';
 
@@ -82,28 +83,48 @@ export async function executeVectorSearch(params: VectorSearchParams): Promise<S
     const queryVector = await provider.embedText(params.query);
 
     // 2. Fetch candidate chunks matching standard metadata filters
-    const whereChunk: any = {
-      embeddingStatus: 'COMPLETED',
-      standardId: { not: null },
+    const compatibleSectors = params.sector ? getCompatibleBisSectors(params.sector) : [];
+
+    const buildWhereChunk = (applySector = true): any => {
+      const whereChunk: any = {
+        embeddingStatus: 'COMPLETED',
+        standardId: { not: null },
+      };
+
+      const stdFilter: any = { isActive: true };
+
+      if (applySector && params.sector) {
+        if (compatibleSectors.length > 0) {
+          stdFilter.OR = [
+            { sector: { contains: params.sector, mode: 'insensitive' } },
+            ...compatibleSectors.map((s) => ({ sector: { contains: s, mode: 'insensitive' } })),
+          ];
+        } else {
+          stdFilter.sector = { contains: params.sector, mode: 'insensitive' };
+        }
+      }
+
+      if (params.department) {
+        stdFilter.department = { contains: params.department, mode: 'insensitive' };
+      }
+
+      if (params.status) {
+        stdFilter.status = params.status;
+      }
+
+      whereChunk.standard = stdFilter;
+
+      if (params.authorityLevel) {
+        whereChunk.sourceDocument = {
+          authorityLevel: params.authorityLevel,
+        };
+      }
+
+      return whereChunk;
     };
 
-    if (params.sector || params.department || params.status) {
-      whereChunk.standard = {
-        isActive: true,
-        ...(params.sector ? { sector: { contains: params.sector, mode: 'insensitive' } } : {}),
-        ...(params.department ? { department: { contains: params.department, mode: 'insensitive' } } : {}),
-        ...(params.status ? { status: params.status } : {}),
-      };
-    }
-
-    if (params.authorityLevel) {
-      whereChunk.sourceDocument = {
-        authorityLevel: params.authorityLevel,
-      };
-    }
-
-    const chunks = await prisma.knowledgeChunk.findMany({
-      where: whereChunk,
+    let chunks = await prisma.knowledgeChunk.findMany({
+      where: buildWhereChunk(true),
       include: {
         standard: {
           include: {
@@ -113,6 +134,21 @@ export async function executeVectorSearch(params: VectorSearchParams): Promise<S
         sourceDocument: true,
       },
     });
+
+    // Fallback: If sector constraint returned 0 chunks, retry without sector constraint
+    if (chunks.length === 0 && params.sector) {
+      chunks = await prisma.knowledgeChunk.findMany({
+        where: buildWhereChunk(false),
+        include: {
+          standard: {
+            include: {
+              sourceDocument: true,
+            },
+          },
+          sourceDocument: true,
+        },
+      });
+    }
 
     if (chunks.length === 0) {
       return [];

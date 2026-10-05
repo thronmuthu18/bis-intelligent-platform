@@ -3,6 +3,7 @@ import { OFFICIAL_SOURCE_REGISTRY } from '../../config/sourceRegistry.js';
 import { VERIFIED_SEED_STANDARDS } from '../../data/seedStandards.js';
 import { validateStandardItem, validateSourceKey, RawStandardIngestItem } from './validator.js';
 import { persistStandardRecord } from './deduplication.js';
+import { syncStandardEmbeddings } from '../rag/embedding.service.js';
 import { AppError } from '../../utils/AppError.js';
 import { logger } from '../../config/logger.js';
 import { API_ERROR_CODES } from '@bis/shared';
@@ -91,6 +92,13 @@ export async function triggerOfficialIngestion(
         } else {
           recordsSkipped++;
         }
+
+        // 5. Synchronize and embed knowledge chunks for RAG
+        try {
+          await syncStandardEmbeddings(persistResult.standardId);
+        } catch (embedErr) {
+          logger.warn(`Failed to sync embeddings for standard ${rawItem.isNumber}: ${embedErr}`);
+        }
       } catch (err: unknown) {
         recordsFailed++;
         const message = err instanceof Error ? err.message : String(err);
@@ -155,4 +163,12 @@ export async function getIngestionRuns(limit = 20) {
     orderBy: { startedAt: 'desc' },
     take: Math.min(limit, 50),
   });
+}
+
+/**
+ * Ensures authoritative seed standards and their knowledge chunk embeddings are present in the database.
+ * Fully repeatable and idempotent: checks existing records and does not duplicate standards or re-embed unchanged chunks.
+ */
+export async function ensureSeedKnowledgeIngested(): Promise<IngestionExecutionResult> {
+  return triggerOfficialIngestion('bis_seed_standards', 'SYSTEM_BOOTSTRAP');
 }

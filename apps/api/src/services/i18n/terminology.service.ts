@@ -37,10 +37,16 @@ export class TerminologyService {
   public static extractPreservedTerms(text: string, customTerms: string[] = []): string[] {
     const preserved = new Set<string>(customTerms);
 
-    // Regex for Indian Standard numbers: IS 10322, IS 1417, IS/ISO 9001, etc.
-    const isMatches = text.match(/\bIS(?:\/[A-Z]+)?\s+\d+(?:\s*\([^)]+\))?(?::\d{4})?/g);
+    // Regex for Indian Standard numbers: IS 10322, IS 10322 (Part 5/Sec 1) : 2012, IS 1417, IS/ISO 9001, IS 302-1, etc.
+    const isMatches = text.match(/\bIS(?:\/[A-Z]+)?\s+\d+(?:[\s\-/]Part\s+\d+(?:\/Sec\s+\d+)?)?(?:\s*\([^)]+\))?(?:\s*:\s*\d{4})?(?!\w)/g);
     if (isMatches) {
       isMatches.forEach((m) => preserved.add(m.trim()));
+    }
+
+    // Regex for Certification Schemes: Scheme I, Scheme II, Scheme IV, Scheme X, etc.
+    const schemeMatches = text.match(/\bScheme\s+[IVX\d]+(?:\s*\([^)]+\))?/gi);
+    if (schemeMatches) {
+      schemeMatches.forEach((m) => preserved.add(m.trim()));
     }
 
     // Regex for CM/L numbers: CM/L-1234567 or CM/L 1234567

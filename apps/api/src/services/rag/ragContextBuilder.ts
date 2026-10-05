@@ -24,7 +24,7 @@ export async function buildRagContext(input: RagRetrieveInput): Promise<RagConte
   const maxChars = input.maxCharacters || DEFAULT_MAX_CHARACTERS;
 
   // 1. Retrieve top standards using Hybrid Search
-  const searchRes = await executeHybridSearch({
+  let searchRes = await executeHybridSearch({
     q: query,
     mode: 'hybrid',
     sector: input.filters?.sector,
@@ -34,6 +34,19 @@ export async function buildRagContext(input: RagRetrieveInput): Promise<RagConte
     limit: topK,
     page: 1,
   });
+
+  // Fallback: If sector constraint returned zero results, retry without sector filter
+  if (searchRes.results.length === 0 && input.filters?.sector) {
+    searchRes = await executeHybridSearch({
+      q: query,
+      mode: 'hybrid',
+      department: input.filters?.department,
+      status: input.filters?.status,
+      authorityLevel: input.filters?.authorityLevel,
+      limit: topK,
+      page: 1,
+    });
+  }
 
   const results: RagContextEvidenceItem[] = [];
   const citations: RagContextCitation[] = [];
@@ -127,7 +140,8 @@ export async function buildRagContext(input: RagRetrieveInput): Promise<RagConte
     });
   }
 
-  const contextText = textBlocks.join('\n\n');
+  const preamble = textBlocks.length > 0 ? '### APPLICABLE INDIAN STANDARDS (AUTHORITATIVE SEED CATALOG)\n\n' : '';
+  const contextText = preamble + textBlocks.join('\n\n');
 
   return {
     query,

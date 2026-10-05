@@ -69,8 +69,8 @@ export function ProductDocumentsPage(): React.ReactElement {
         documentService.getDocuments(product.id),
         documentService.getCompleteness(product.id),
       ]);
-      setDocuments(docsData);
-      setCompleteness(completenessData);
+      setDocuments(Array.isArray(docsData) ? docsData : []);
+      setCompleteness(completenessData || null);
     } catch (err: any) {
       setError(err?.message || 'Failed to load product documents');
     } finally {
@@ -175,7 +175,7 @@ export function ProductDocumentsPage(): React.ReactElement {
   };
 
   // Filtered documents
-  const filteredDocs = documents.filter((doc) => {
+  const filteredDocs = (documents || []).filter((doc) => {
     const matchesSearch =
       doc.originalFileName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       doc.documentType.toLowerCase().includes(searchQuery.toLowerCase()) ||

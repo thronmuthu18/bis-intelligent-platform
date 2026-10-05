@@ -162,6 +162,47 @@ describe('Production Environment Validation', () => {
       }
     });
 
+    it('should NOT require OpenAI API key when AI_PROVIDER is gemini in production', () => {
+      const res = validateEnv({
+        ...baseValidProdEnv,
+        AI_PROVIDER: 'gemini',
+        AI_API_KEY: 'valid_gemini_api_key_test_123',
+      });
+      expect(res.success).toBe(true);
+      if (!res.success) {
+        expect(res.error.issues.some((i) => i.path.includes('OPENAI_API_KEY'))).toBe(false);
+      }
+    });
+
+    it('should accept AI_API_KEY as valid key when AI_PROVIDER is gemini in production', () => {
+      const res = validateEnv({
+        ...baseValidProdEnv,
+        AI_PROVIDER: 'gemini',
+        AI_API_KEY: 'valid_ai_key_format_123',
+      });
+      expect(res.success).toBe(true);
+    });
+
+    it('should require Gemini API key when TRANSLATION_PROVIDER is gemini in production', () => {
+      const res = validateEnv({
+        ...baseValidProdEnv,
+        TRANSLATION_PROVIDER: 'gemini',
+      });
+      expect(res.success).toBe(false);
+      if (!res.success) {
+        expect(res.error.issues.some((i) => i.path.includes('GEMINI_API_KEY'))).toBe(true);
+      }
+    });
+
+    it('should accept AI_API_KEY when TRANSLATION_PROVIDER is gemini in production', () => {
+      const res = validateEnv({
+        ...baseValidProdEnv,
+        TRANSLATION_PROVIDER: 'gemini',
+        AI_API_KEY: 'valid_gemini_key_for_translation',
+      });
+      expect(res.success).toBe(true);
+    });
+
     it('should require OpenAI API key when TRANSLATION_PROVIDER is openai in production', () => {
       const res = validateEnv({
         ...baseValidProdEnv,
