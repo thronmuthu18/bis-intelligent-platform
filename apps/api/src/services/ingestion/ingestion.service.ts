@@ -170,5 +170,5 @@ export async function getIngestionRuns(limit = 20) {
  * Fully repeatable and idempotent: checks existing records and does not duplicate standards or re-embed unchanged chunks.
  */
 export async function ensureSeedKnowledgeIngested(): Promise<IngestionExecutionResult> {
-  return triggerOfficialIngestion('bis_seed_standards', 'SYSTEM_BOOTSTRAP');
+  return triggerOfficialIngestion('bis-know-your-standard', 'SYSTEM_BOOTSTRAP');
 }
